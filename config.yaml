@@ -1,0 +1,45 @@
+farm:
+  name: signaldrift
+  niche: unsolved_mysteries
+  subreddits:
+    - UnresolvedMysteries
+  tone: curious_investigative
+  target_length_seconds: 75
+
+crawl:
+  min_upvote_ratio: 0.85
+  min_comments: 50
+  top_comments_count: 20
+
+sense:
+  chunk_size: 200
+  chunk_overlap: 20
+  top_k_retrieval: 20
+  top_k_rerank: 5
+
+llm:
+  model: gpt-4o-mini
+  max_tokens: 1000
+
+forge:
+  resolution: "1080x1920"
+  fps: 30
+  tts_engine: edge
+  caption_words_per_frame: 3
+
+output:
+  queue_dir: output/queue
+  rendered_dir: output/rendered
+  archive_dir: output/archive
+
+posting:
+  manual: true
+  platforms:
+    - facebook
+    - tiktok
+    - pinterest
+
+revenue:
+  facebook_rpm: 1.5
+  tiktok_rpm: 0.03
+  pinterest_rpm: 0.0

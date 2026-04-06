@@ -1,0 +1,25 @@
+# Crawl
+praw>=7.7.0
+
+# Sense / RAG
+sentence-transformers>=2.7.0
+qdrant-client>=1.9.0
+
+# Draft / LLM
+openai>=1.30.0
+
+# Forge / TTS
+edge-tts>=6.1.9      # Microsoft Edge neural TTS (free, Python 3.13 compatible)
+elevenlabs>=1.2.0    # ElevenLabs fallback
+
+# Forge / Video
+# ffmpeg-python is a wrapper — ffmpeg binary must be installed separately
+ffmpeg-python>=0.2.0
+
+# Config / Utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Dashboard
+streamlit>=1.35.0
+pandas>=2.2.0
