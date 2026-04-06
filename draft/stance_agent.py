@@ -58,16 +58,16 @@ Treat the subject with respect. Output ONLY the paragraph. No headers, no bullet
 """
 
 
-def _format_comments(comments: list[dict], limit: int = 3) -> str:
+def _format_comments(comments: list[dict], limit: int = 5) -> str:
     if not comments:
         return "None"
-    return "\n".join(f"- {c['body'][:200]}" for c in comments[:limit])
+    return "\n".join(f"- {c['body'][:300]}" for c in comments[:limit])
 
 
 def _format_canon(chunks: list[dict]) -> str:
     if not chunks:
         return "None"
-    return "\n\n".join(f"[{c['subreddit']}] {c['text'][:300]}" for c in chunks)
+    return "\n\n".join(f"[{c['subreddit']}] {c['text'][:500]}" for c in chunks)
 
 
 def derive_stance(context: dict, config: dict) -> dict:
@@ -86,7 +86,7 @@ def derive_stance(context: dict, config: dict) -> dict:
 
     prompt = _USER_TEMPLATE.format(
         theory_title=theory["title"],
-        theory_body=theory["body"][:800],
+        theory_body=theory["body"][:2000],
         supporting=_format_comments(debate.get("supporting_evidence", [])),
         counter=_format_comments(debate.get("counterargument", [])),
         related=_format_comments(debate.get("related_theory", [])),

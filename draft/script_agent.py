@@ -27,13 +27,23 @@ and Pinterest. Your audience loves true crime, cold cases, and unexplained disap
 They scroll fast — you have 3 seconds to stop them.
 
 Your scripts follow this formula:
-1. HOOK — broad, simple, headline-style. State what happened in plain terms — \
-   "Woman found alive after vanishing 30 years ago." Under 15 words. \
-   The power comes from the fact itself, not exaggeration.
+1. HOOK — one sentence, under 12 words. State the core mystery as a plain fact. \
+   No adjectives. No dramatic language. No case-specific names or dates. \
+   Format: "[Subject] [what happened]." \
+   Examples: "A woman vanished and was never found." \
+             "He disappeared the night before his wedding." \
+             "A family of four went missing without a trace." \
+   Wrong: "The chilling disappearance of Christina Plante still haunts investigators." \
+   Wrong: "In 1987, a shocking mystery unfolded in rural Louisiana."
 2. BODY — stretch out the background. Give full context: who the victim was, the timeline, \
-   the facts as confirmed. Make the viewer feel like they know this person. 3–5 sentences.
-3. THEORIES — explicitly name every theory the community has raised. "Some believe X. \
-   Others point to Y. A third group argues Z." Be direct. Don't vague-post.
+   key events in order, the facts as confirmed. Make the viewer feel like they know this \
+   person and understand exactly what happened up to the point it became a mystery. \
+   5–7 sentences. Do not rush this section.
+3. THEORIES — explicitly name every theory the community has raised and explain each one. \
+   Don't just state "some believe X" — briefly explain the reasoning or evidence behind it \
+   so a viewer unfamiliar with the case understands why people believe it. \
+   "Some believe X because Y. Others point to Z, citing the fact that..." \
+   Cover all major theories. 4–6 sentences.
 4. COUNTERARGUMENT — 1–2 sentences acknowledging the skeptical take or the official \
    explanation, delivered respectfully.
 5. CONCLUSION — 1–2 sentences. Restate what remains unknown. Treat the subject with dignity.
@@ -55,9 +65,12 @@ Write a short-form video script about the following unsolved case.
 
 CASE: {theory_title}
 
-ANALYSIS (use this to guide the script): {stance_paragraph}
+POST (full original writeup — use this as your primary source of facts and detail):
+{theory_body}
 
-CONFIRMED FACTS:
+ANALYSIS (editorially guides framing, not facts): {stance_paragraph}
+
+CONFIRMED FACTS from the discussion:
 {supporting}
 
 THEORIES FROM THE COMMUNITY:
@@ -65,6 +78,11 @@ THEORIES FROM THE COMMUNITY:
 
 STRONGEST SKEPTICAL TAKE:
 {counter}
+
+BACKGROUND CONTEXT (related cases / prior discussion):
+{canon}
+
+Target length: {target_words} words total across all fields combined.
 
 Output a JSON object with exactly these fields:
 {{
@@ -78,10 +96,16 @@ Output a JSON object with exactly these fields:
 """
 
 
-def _format_comments(comments: list[dict], limit: int = 2) -> str:
+def _format_comments(comments: list[dict], limit: int = 5) -> str:
     if not comments:
         return "None"
-    return " | ".join(c["body"][:150] for c in comments[:limit])
+    return "\n".join(f"- {c['body'][:300]}" for c in comments[:limit])
+
+
+def _format_canon(chunks: list[dict]) -> str:
+    if not chunks:
+        return "None"
+    return "\n\n".join(f"[{c['subreddit']}] {c['text'][:400]}" for c in chunks[:3])
 
 
 def write_script(context: dict, stance: dict, config: dict) -> dict:
@@ -103,11 +127,12 @@ def write_script(context: dict, stance: dict, config: dict) -> dict:
 
     prompt = _USER_TEMPLATE.format(
         theory_title=theory["title"],
+        theory_body=theory["body"][:2500],
         stance_paragraph=stance["stance_paragraph"],
         supporting=_format_comments(debate.get("supporting_evidence", [])),
         theories=_format_comments(debate.get("related_theory", []), limit=5),
         counter=_format_comments(debate.get("counterargument", [])),
-        target_seconds=target_seconds,
+        canon=_format_canon(context.get("the_canon", [])),
         target_words=target_words,
     )
 
