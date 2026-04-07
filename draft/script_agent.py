@@ -77,6 +77,8 @@ Be specific — not "an old house" but "a one-story rental off Route 9 where the
 The more ordinary this feels, the harder what follows lands.
 
 ESCALATION [5–8 sentences]
+Begin here, not before. Do not repeat who you were or where you were — setup already did that. \
+Start with the first wrong thing. \
 The slow build. Stack the wrong details from the source story one at a time — \
 each one slightly worse, each one still explainable, each one specific. \
 Name actual things: the smell, the object, the sound, what you read, what you saw in the wall. \
@@ -92,15 +94,17 @@ The moment full understanding arrived — not the first disturbing discovery, bu
 The moment where everything broke and could not be put back. \
 If a person or entity with an unusual physical form appears: describe their body completely. \
 Skin color and texture. Exact limb proportions. Every wound, mutation, or impossible feature. \
-Do not use "monstrous", "creature", "figure", "it", or "thing" as substitutes for physical description. \
-Name what was there. Short sentences. Do not cut away. Do not soften it. \
-Use your key_physical_images list. Borrow the source's exact words for anatomy — do not substitute. \
-"Greasy hair dripping with blood" stays "greasy hair dripping with blood." Never paraphrase physical descriptions.
+Do not use "monstrous", "creature", "figure", "it", or "thing" as substitutes for physical description — \
+using any of these words where a physical description belongs is a failure. Name what was there. \
+Short sentences. Do not cut away. Do not soften it. \
+Use your key_physical_images list. Every entry that describes the entity or the attack must appear in the climax. \
+Do not select a subset — render all of them. Borrow the source's exact words — do not paraphrase anatomy.
 
 AFTERMATH [2–4 sentences]
 What came after. Stay exactly where the source story left it — do not invent resolution. \
-If it's still unresolved, say so. If the narrator is still sitting with it, say so. \
-The last sentence should linger.
+If the source reveals post-climax facts — remains found, official explanation given, scale confirmed — \
+include them as named details, not reactions. Do not invent emotional states. \
+If it's still unresolved, say so. The last sentence should linger.
 
 OUTRO [1–2 sentences]
 A quiet close — not a question, not a moral, not a call to action. \
