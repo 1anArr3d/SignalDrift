@@ -225,8 +225,8 @@ def _detect_voice(text: str) -> str:
 def _run_openai_tts(text: str, output_path: str, config: dict, narrator_gender: str = "male") -> list[dict]:
     import openai
     client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    voice = config["forge"].get("openai_tts_voice", "onyx")
-    print(f"[tts] Voice: {voice} (from config)")
+    voice = "nova" if narrator_gender == "female" else "onyx"
+    print(f"[tts] Voice: {voice} (narrator_gender={narrator_gender})")
     model  = config["forge"].get("openai_tts_model", "tts-1-hd")
 
     response = client.audio.speech.create(
