@@ -43,38 +43,53 @@ def _sanitise_ass(text: str) -> str:
     return text
 
 
+_MIN_CAPTION_DURATION = 0.35  # seconds — prevents words flashing by unreadably
+
+
 def _group_words(word_timings: list[dict], n: int = 2, sentence_gap: float = 0.7) -> list[dict]:
     """
-    Merge consecutive words into n-word caption chunks.
-    Gaps <= sentence_gap are filled (word holds until next).
-    Gaps > sentence_gap are treated as sentence boundaries (caption clears).
+    Group words into n-word captions. Each caption holds until the next one starts,
+    clearing on sentence gaps > sentence_gap seconds.
     """
+    if not word_timings:
+        return []
+
     groups = []
-    bucket: list[dict] = []
+    i = 0
+    while i < len(word_timings):
+        # Collect up to n words, stopping at sentence gaps
+        chunk = [word_timings[i]]
+        while len(chunk) < n and (i + len(chunk)) < len(word_timings):
+            nxt  = word_timings[i + len(chunk)]
+            prev = word_timings[i + len(chunk) - 1]
+            if nxt["start"] - prev["end"] > sentence_gap:
+                break
+            chunk.append(nxt)
 
-    def flush():
-        if bucket:
-            groups.append({
-                "word":  " ".join(w["word"] for w in bucket),
-                "start": bucket[0]["start"],
-                "end":   bucket[-1]["end"],
-            })
-        bucket.clear()
+        next_i      = i + len(chunk)
+        group_start = chunk[0]["start"]
+        group_end   = chunk[-1]["end"]
 
-    for i, w in enumerate(word_timings):
-        if bucket:
-            prev_original_end = word_timings[i - 1]["end"]
-            gap = w["start"] - prev_original_end
-            if gap > sentence_gap:
-                flush()
-            elif gap > 0:
-                prev = bucket[-1]
-                bucket[-1] = {**prev, "end": w["start"]}
-        bucket.append(w)
-        if len(bucket) >= n:
-            flush()
+        # Extend to next word's start so there are no blank frames between captions
+        if next_i < len(word_timings):
+            next_start = word_timings[next_i]["start"]
+            cap        = next_start  # never push past the next word
+            if next_start - group_end < sentence_gap:
+                group_end = next_start
+        else:
+            cap = float("inf")
 
-    flush()
+        # Minimum display duration (capped so we don't bleed into the next word)
+        if group_end - group_start < _MIN_CAPTION_DURATION:
+            group_end = min(group_start + _MIN_CAPTION_DURATION, cap)
+
+        groups.append({
+            "word":  " ".join(w["word"] for w in chunk),
+            "start": group_start,
+            "end":   round(group_end, 3),
+        })
+        i = next_i
+
     return groups
 
 
@@ -117,9 +132,13 @@ _FFMPEG_DIR = os.environ.get(
     r"\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
 )
 os.environ["PATH"] = _FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
+os.environ.setdefault(
+    "FONTCONFIG_FILE",
+    str(Path(__file__).resolve().parent.parent / "assets" / "fonts.conf"),
+)
 
 _FONT_DIR   = r"C:\Windows\Fonts"
-_FONT_PATH  = r"C\:/Windows/Fonts/arialbd.ttf"
+_FONT_FILE  = r"C:/Windows/Fonts/bahnschrift.ttf"
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "backgrounds"
 _MUSIC_DIR  = Path(__file__).resolve().parent.parent / "assets" / "music"
 
@@ -204,44 +223,29 @@ def _build_audio_stream(audio_path: str, music_path: str | None, duration: float
     if not music_path:
         return narration
     music   = ffmpeg.input(music_path, stream_loop=-1, t=duration).audio
-    music_q = music.filter("volume", 0.20)
+    music_q = music.filter("volume", 0.07)
     print("[composer] Mixing narration + music")
     return ffmpeg.filter([narration, music_q], "amix", inputs=2, duration="first", normalize=0)
 
 
 # ---------------------------------------------------------------------------
-# Case file panel — niche styles
+# Case file panel
 # ---------------------------------------------------------------------------
 
-# Each niche defines the badge label, badge colour, card background, and outline colour.
-_NICHE_PANEL_STYLES = {
-    "unsolved_mysteries": {
-        "badge":        "UNSOLVED CASE",
-        "badge_color":  (220, 50,  50,  255),   # red
-        "card_fill":    (15,  15,  18,  245),   # near-black
-        "card_outline": (80,  80,  90,  200),   # dark grey
-        "divider":      (80,  80,  90,  180),
-    },
-    "first_person_horror": {
-        "badge":        "TRUE STORY",
-        "badge_color":  (180, 30,  220, 255),   # deep purple
-        "card_fill":    (10,  5,   15,  245),   # very dark purple-black
-        "card_outline": (100, 40,  120, 200),   # muted purple
-        "divider":      (100, 40,  120, 180),
-    },
+_PANEL_STYLE = {
+    "badge":        "SignalDrift",
+    "badge_color":  (180, 30, 220, 255),
+    "card_fill":    (10, 5, 15, 245),
+    "card_outline": (100, 40, 120, 200),
+    "divider":      (100, 40, 120, 180),
 }
 
-_DEFAULT_NICHE_STYLE = "unsolved_mysteries"
 
-
-def _render_case_panel(post_info: dict, width: int, height: int, output_path: str, niche: str = "unsolved_mysteries") -> None:
-    """
-    Reddit-style card centred on screen. Transparent PNG overlaid for first N seconds.
-    Visual style adapts to the niche defined in config.
-    """
+def _render_case_panel(post_info: dict, width: int, height: int, output_path: str) -> None:
+    """Reddit-style card centred on screen. Transparent PNG overlaid for first N seconds."""
     from PIL import Image, ImageDraw, ImageFont
 
-    style  = _NICHE_PANEL_STYLES.get(niche, _NICHE_PANEL_STYLES[_DEFAULT_NICHE_STYLE])
+    style  = _PANEL_STYLE
     pad    = 40
     card_w = int(width * 0.92)
 
@@ -252,9 +256,9 @@ def _render_case_panel(post_info: dict, width: int, height: int, output_path: st
     except Exception:
         font_badge = font_title = font_sub = ImageFont.load_default()
 
-    hook     = post_info.get("hook", "")
+    title    = post_info.get("title", "")
     subreddit = post_info.get("subreddit", "SignalDrift")
-    wrapped  = textwrap.wrap(hook, width=26)[:4]
+    wrapped  = textwrap.wrap(title, width=26)[:4]
     line_h   = 64
     card_h   = pad * 2 + 38 + 20 + 2 + 20 + len(wrapped) * line_h + 20 + 40
     card_top = int(height * 0.38)
@@ -328,9 +332,8 @@ def compose(
 
         if post_info:
             card_path = os.path.join(tmpdir, "case_panel.png")
-            niche = config.get("farm", {}).get("niche", "unsolved_mysteries")
             try:
-                _render_case_panel(post_info, width, height, card_path, niche=niche)
+                _render_case_panel(post_info, width, height, card_path)
                 card  = ffmpeg.input(card_path).video
                 video = ffmpeg.overlay(video, card, x=0, y=0, enable=f"lte(t,{CARD_SHOW_SECONDS})")
             except Exception as e:
@@ -338,9 +341,10 @@ def compose(
 
         if post_info and post_info.get("subreddit"):
             sub_text = _sanitise_drawtext(f"r/{post_info['subreddit']}")
+            # Use fontfile= to bypass fontconfig (fontconfig init crashes on Windows)
             video = video.filter(
                 "drawtext",
-                fontfile=_FONT_PATH,
+                fontfile=_FONT_FILE,
                 text=sub_text,
                 fontsize=max(28, width // 36),
                 fontcolor="white@0.55",
@@ -352,17 +356,17 @@ def compose(
 
         if word_timings:
             ass_path  = output_path.replace(".mp4", ".ass")
-            words_per = forge_cfg.get("caption_words_per_frame", 2)
+            words_per = forge_cfg.get("caption_words_per_frame", 1)
             _write_ass(word_timings, width, height, ass_path, start_after=float(CARD_SHOW_SECONDS), words_per_caption=words_per)
-            # Absolute path with escaped colon — safe when output is on a different drive
-            ass_ffmpeg = str(Path(ass_path).resolve()).replace("\\", "/").replace(":", "\\:")
-            video = video.filter("ass", ass_ffmpeg)
+            ass_ffmpeg = ass_path.replace("\\", "/")
+            # fontsdir bypasses fontconfig (fontconfig init crashes on Windows)
+            video = video.filter("ass", ass_ffmpeg, fontsdir="C:/Windows/Fonts")
 
         # --- Audio pipeline ---
         audio = _build_audio_stream(audio_path, music_path, duration)
 
         # --- Single-pass render ---
-        (
+        out = (
             ffmpeg
             .output(video, audio, output_path,
                 vcodec="libx264",
@@ -375,11 +379,21 @@ def compose(
                 video_bitrate="1500k",
                 preset="ultrafast",
                 t=duration,
-                loglevel="warning",
+                loglevel="error",
             )
             .overwrite_output()
-            .run()
         )
+        try:
+            cmd = out.compile()
+            result = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+            if result.returncode != 0:
+                lines = result.stderr.splitlines()
+                skip = ("ffmpeg version", "built with", "configuration:", "  lib")
+                relevant = [l for l in lines if not any(l.startswith(p) for p in skip)]
+                print("[composer] ffmpeg error:\n" + "\n".join(relevant))
+                raise ffmpeg.Error("ffmpeg", result.stdout.encode(), result.stderr.encode())
+        except ffmpeg.Error:
+            raise
 
         if word_timings:
             ass_cleanup = Path(output_path.replace(".mp4", ".ass"))
@@ -388,3 +402,8 @@ def compose(
 
     print(f"[composer] Rendered: {output_path} ({duration:.1f}s)")
     return output_path
+
+
+def run(audio_path: str, output_path: str, config: dict, post_info: dict | None = None, word_timings: list | None = None) -> str:
+    """Entry point called by main.py."""
+    return compose(audio_path, output_path, config, post_info, word_timings)

@@ -2,16 +2,15 @@
 main.py
 SignalDrift pipeline orchestrator.
 
-Runs the full pipeline end to end for one farm:
-  crawl -> sense -> draft -> forge -> output
+Runs the full pipeline end to end:
+  crawl -> draft -> forge -> output
 
 Each stage can be run independently for debugging by passing --stage.
 
 Usage:
   python main.py                        # full pipeline
   python main.py --stage crawl          # crawl only
-  python main.py --stage sense          # sense only (uses cached crawl output)
-  python main.py --stage draft          # draft only (uses cached sense output)
+  python main.py --stage draft          # draft only (uses cached crawl output)
   python main.py --stage forge          # forge only (uses cached draft output)
   python main.py --post-id <id>         # run draft+forge for a single post ID
 """
@@ -25,9 +24,8 @@ from pathlib import Path
 import yaml
 
 # Stage imports
-from crawl import reddit_crawler, cleaner, comment_extractor
-from sense import chunker, embedder
-from draft import context_builder, stance_agent, script_agent, title_generator
+from crawl import reddit_crawler, cleaner
+from draft import script_agent
 from forge import tts, composer
 
 
@@ -55,22 +53,10 @@ def run_crawl(config: dict) -> list[dict]:
     print("\n=== STAGE: crawl ===")
     raw_posts = reddit_crawler.run(config)
     cleaned_posts = cleaner.run(raw_posts)
-    classified_posts = comment_extractor.run(cleaned_posts, config)
 
-    _save_json(classified_posts, "output/classified_posts.json")
-    print(f"[main] Crawl complete. {len(classified_posts)} posts saved.")
-    return classified_posts
-
-
-# ---------------------------------------------------------------------------
-# Stage: sense
-# ---------------------------------------------------------------------------
-
-def run_sense(classified_posts: list[dict], config: dict) -> None:
-    print("\n=== STAGE: sense ===")
-    chunks = chunker.run(classified_posts, config)
-    embedder.run(chunks, config)
-    print("[main] Sense complete. Chunks embedded into Qdrant.")
+    _save_json(cleaned_posts, "output/classified_posts.json")
+    print(f"[main] Crawl complete. {len(cleaned_posts)} posts saved.")
+    return cleaned_posts
 
 
 # ---------------------------------------------------------------------------
@@ -80,18 +66,23 @@ def run_sense(classified_posts: list[dict], config: dict) -> None:
 def run_draft(post: dict, config: dict) -> dict:
     print(f"\n=== STAGE: draft [{post['post_id']}] ===")
 
-    ctx = context_builder.run(post, config)
-    stance = stance_agent.run(ctx, config)
-    script_result = script_agent.run(ctx, stance, config)
-    titles = title_generator.run(script_result["script"], ctx, config)
+    ctx = {
+        "the_theory": {
+            "title":   post["title"],
+            "body":    post["body"],
+            "subreddit": post["subreddit"],
+            "post_id": post["post_id"],
+        }
+    }
+
+    script_result = script_agent.run(ctx, config)
 
     draft_output = {
-        "post_id": post["post_id"],
+        "post_id":   post["post_id"],
         "subreddit": post["subreddit"],
-        "context": ctx,
-        "stance": stance,
-        "script": script_result["script"],
-        "titles": titles["titles"],
+        "title":     post["title"],
+        "context":   ctx,
+        "script":    script_result["script"],
     }
 
     queue_path = f"output/queue/{post['post_id']}.json"
@@ -110,22 +101,19 @@ def run_forge(draft: dict, config: dict) -> str:
     print(f"\n=== STAGE: forge [{draft['post_id']}] ===")
 
     post_id = draft["post_id"]
-    script = draft["script"]
-    ctx = draft.get("context", {})
+    script  = draft["script"]
 
     timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_path  = f"output/rendered/{post_id}_{timestamp}.mp3"
     output_path = f"output/rendered/{post_id}_{timestamp}.mp4"
 
-    # TTS
     tts_result = tts.run(script, audio_path, config)
     print(f"[main] Audio: {tts_result['wav_path']}")
 
-    # Compose background + opening card + effects
     post_info = {
-        "hook": script.get("hook", ""),
+        "title":     draft.get("title", ""),
+        "subreddit": draft.get("subreddit", ""),
     }
-    # Compose + captions in one FFmpeg pass
     composer.run(tts_result["wav_path"], output_path, config, post_info, tts_result["word_timings"])
 
     elapsed = time.time() - forge_start
@@ -138,22 +126,13 @@ def run_forge(draft: dict, config: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def run_pipeline(config: dict, limit: int = 5) -> None:
-    """
-    Run the full pipeline. Processes up to `limit` posts through draft+forge.
-    limit defaults to the weekly target (5).
-    """
-    # Crawl
-    classified_posts = run_crawl(config)
-    if not classified_posts:
+    cleaned_posts = run_crawl(config)
+    if not cleaned_posts:
         print("[main] No qualifying posts found. Exiting.")
         return
 
-    # Sense — index all posts into Qdrant
-    run_sense(classified_posts, config)
-
-    # Draft + Forge — pick top posts by engagement signal
     top_posts = sorted(
-        classified_posts,
+        cleaned_posts,
         key=lambda p: p["score"] * p["upvote_ratio"],
         reverse=True,
     )[:limit]
@@ -182,7 +161,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SignalDrift pipeline")
     parser.add_argument(
         "--stage",
-        choices=["crawl", "sense", "draft", "forge"],
+        choices=["crawl", "draft", "forge"],
         default=None,
         help="Run a single pipeline stage",
     )
@@ -224,10 +203,6 @@ def main() -> None:
 
     if args.stage == "crawl":
         run_crawl(config)
-
-    elif args.stage == "sense":
-        posts = _load_json("output/classified_posts.json")
-        run_sense(posts, config)
 
     elif args.stage == "draft":
         posts = _load_json("output/classified_posts.json")
