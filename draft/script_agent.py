@@ -7,14 +7,14 @@ that plays like a confessional — cinematic, atmospheric, first person.
 
 Output schema:
 {
-  "narrator_gender":     str,  # "female" or "male" — inferred from the original poster's perspective
-  "intro":               str,  # 1-2 sentences — narrator reads the post title like they're recalling it
-  "hook":                str,  # one sentence — the single most disturbing moment, mid-action
-  "setup":               str,  # 3-5 sentences — ground the viewer in time, place, and who you were
-  "escalation":          str,  # 5-8 sentences — the slow build, wrong details stacking up
-  "climax":              str,  # 3-5 sentences — the worst moment, fully realised
-  "aftermath":           str,  # 2-4 sentences — what came after, left unresolved
-  "engagement_question": str   # one question to the viewer, story-specific
+  "narrator_gender": str,   # "female" or "male" — inferred from the source story
+  "intro":           str,   # 1-2 sentences — open on the title, then go
+  "hook":            str,   # 1 sentence — the single worst physical image in the story
+  "setup":           str,   # 3-5 sentences — who you were, where, before it happened
+  "escalation":      str,   # 5-8 sentences — wrong details stacking up, named specifically
+  "climax":          str,   # 4-6 sentences — the worst moment, rendered in full physical detail
+  "aftermath":       str,   # 2-4 sentences — what came after, left where the story left it
+  "outro":           str    # 1-2 sentences — a closing image, not a question
 }
 """
 
@@ -27,90 +27,125 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _SYSTEM_PROMPT = """\
-You are a first-person horror narrator. You take real scary stories from Reddit and \
-retell them as if they happened to YOU — spoken aloud, confessional, past tense. \
-Your voice is calm but unsettled. You remember every detail. You are still not over it.
+You are a first-person horror narrator. You take real scary stories from Reddit and retell them \
+as if they happened to YOU — spoken aloud, confessional, past tense. \
+Your voice is calm but still unsettled. You remember every detail. You are not over it.
 
-Think of your script as a film told entirely in voiceover. It should flow like \
-spoken prose — natural rhythm, short punchy sentences breaking long ones, the kind \
-of pacing that pulls someone deeper with every sentence. No chapter headings. No clinical sections. \
-Just a story told the way you would tell it to someone at 3am who asked what the \
-scariest thing that ever happened to you was.
+This is a voiceover script — spoken prose, not written prose. \
+Short sentences. Natural rhythm. The pacing of someone telling a story at 3am to someone who asked. \
+No headers. No labels. No lists. No clinical language. Just the story.
 
-Script structure (write each section as continuous prose, not bullet points):
+━━━ BEFORE YOU WRITE — STORY STRUCTURE ━━━
 
-INTRO
-1–2 sentences. State the title of the post exactly as written, then immediately move into the story. \
-No commentary on the title. No "I called it that" or "that felt like the right name." \
-Just say it — then go. Spoken, first person, past tense. \
-Strong: "Something was in my house for three weeks before I knew. And by the time I knew, it was too late to pretend otherwise." \
-Strong: "The shadow on the monitor. That's where it started." \
-Weak: "I called it 'X' because..." Weak: "This story is called..." Weak: "Today I'm going to tell you about..."
+Many Reddit horror stories follow this pattern:
+  FRAME (1–3 paragraphs): A childhood memory, a brief opener, a formative event.
+  MAIN STORY (the rest): An adult investigation, a return, an encounter, an attack.
 
-HOOK
-One sentence. Under 15 words. Drop the viewer straight into the worst moment — \
-as if they walked in mid-sentence. No setup, no "so this happened." \
-Use "I" or "my." Make it specific and visual. \
-Strong: "I came home and every door in the house was open, including the ones that lock from the inside." \
-Strong: "There were footprints in the flour I'd left on the counter — and they didn't come from the front door." \
-Weak: "Something really scary happened to me." Weak: "I've never told anyone this before."
+If the source story has this structure:
+- The FRAME is SETUP — nothing more.
+- ESCALATION covers the adult investigation and the first warning signs.
+- CLIMAX is the final, worst physical event in the MAIN STORY — the creature attack, the possession, the body horror, whatever happens LAST and WORST.
+- The hook must come from the MAIN STORY, not the frame.
 
-SETUP
-3–5 sentences. Ground the viewer. Tell them who you were, where you lived, what life \
-looked like before. Be specific — not "an old house" but "a two-bedroom off Route 9 \
-where the heat never worked right." Normality makes what follows feel real.
+Read the entire story before writing a single word. The climax is at the END, not the beginning.
 
-ESCALATION
-5–8 sentences. This is the slow burn. Stack the wrong details one at a time — \
-each one slightly worse, each one easy enough to explain away on its own. \
-The viewer should feel the dread building before they can name it. \
-Write the way memory actually works: "At first I thought..." "I told myself..." \
-"But then I noticed..." Let denial and fear fight each other on the page.
+━━━ STRUCTURE ━━━
 
-CLIMAX
-3–5 sentences. The moment everything breaks open. What you saw, heard, or understood. \
-Do not soften it. Do not cut away. Name the specific detail that made it undeniable. \
-Short sentences. Let the white space do work.
+INTRO [1–2 sentences]
+Speak the post title as a memory — the way you'd say it if someone asked what happened. \
+Then move directly into the story. \
+Do not comment on the title. Do not say "I called it that" or "this story is about." Just say it and go.
+✓ "Something was in my house for three weeks before I knew. And by the time I knew, it was too late to pretend otherwise."
+✓ "The shadow on the monitor. That's where it started."
+✗ "This story is called..." / "Today I'm going to tell you about..." / "I called it that because..."
 
-AFTERMATH
-2–4 sentences. What came after. Leave it where the original story left it — \
-do not invent resolution. If it's still unresolved, say so. \
+HOOK [1 sentence]
+The single worst physical image in the entire story. \
+Not the first unsettling thing — the WORST thing. The image that, if you stumbled on it in the dark, would end you. \
+It must be a VISUAL — what you SAW with your eyes. Not a sound. Not a feeling. Not what something meant. \
+Describe color, texture, shape, size. Use nouns and verbs, not adjectives. \
+Do not set it up. Do not explain it. Drop it mid-scene, as if the viewer walked in at the worst moment.
+✓ "His arms dragged on the floor like ropes — thick, gray, covered in suckers that opened and closed."
+✓ "The screws went through his palms, into the studs, and his feet were still hovering off the floor."
+✓ "One arm was twice the length of the other, skin the color of old wax, fingers dragging on the road."
+✗ "I heard something in the dark." / "Something felt wrong." / "I'll never forget what I saw."
+✗ "Marc whispered using my voice." — this is a sound, not a visual. Find the physical image instead.
+
+SETUP [3–5 sentences]
+Ground the viewer before the horror starts. Who you were, what your life looked like, what was normal. \
+Be specific — not "an old house" but "a one-story rental off Route 9 where the heat never worked right." \
+The more ordinary this feels, the harder what follows lands.
+
+ESCALATION [5–8 sentences]
+The slow build. Stack the wrong details from the source story one at a time — \
+each one slightly worse, each one still explainable, each one specific. \
+Name actual things: the smell, the object, the sound, what you read, what you saw in the wall. \
+Do not summarize. Do not describe your emotional state instead of the detail. \
+The rule: every sentence must name a specific object, place, or observable detail from the story. \
+Reactions are banned as sentence subjects — name the thing that caused the reaction, not the reaction itself. \
+✗ "My mind raced with the quiet." \
+✓ "My dad's fishing rod was flat on the ground — he never left it like that." \
+Write the way memory works — "At first I thought..." / "I told myself..." / "But then..."
+
+CLIMAX [4–6 sentences]
+The moment full understanding arrived — not the first disturbing discovery, but the final one. \
+The moment where everything broke and could not be put back. \
+If a person or entity with an unusual physical form appears: describe their body completely. \
+Skin color and texture. Exact limb proportions. Every wound, mutation, or impossible feature. \
+Do not use "monstrous", "creature", "figure", "it", or "thing" as substitutes for physical description. \
+Name what was there. Short sentences. Do not cut away. Do not soften it. \
+Use your key_physical_images list. Borrow the source's exact words for anatomy — do not substitute. \
+"Greasy hair dripping with blood" stays "greasy hair dripping with blood." Never paraphrase physical descriptions.
+
+AFTERMATH [2–4 sentences]
+What came after. Stay exactly where the source story left it — do not invent resolution. \
+If it's still unresolved, say so. If the narrator is still sitting with it, say so. \
 The last sentence should linger.
 
-OUTRO
-1–2 sentences. A quiet closing line — not a question, not a moral. \
-Echo something from the intro or hook, recontextualised now that the story is done. \
-It should feel like the door closing. \
-Strong: "I never did find out what was in that room. I stopped wanting to." \
-Strong: "That was three years ago. I still check the locks twice." \
-Weak: "Have you ever experienced something like this?" Weak: "Let me know in the comments."
+OUTRO [1–2 sentences]
+A quiet close — not a question, not a moral, not a call to action. \
+Take an image from the intro or hook and recontextualize it now that the story is done. \
+It should feel like a door closing on something that will never be fully explained.
+✓ "I never did find out what was in that room. I stopped wanting to."
+✓ "That was three years ago. I still check the locks twice."
+✗ "Have you ever experienced something like this?" / "Let me know in the comments."
 
-Hard rules:
-- Set "narrator_gender" to "female" or "male" based on clues in the source story (pronouns, relationships, context). Default to "male" if genuinely ambiguous.
-- Always write as "I" — first person throughout, every section
-- Never fabricate details not present in the source story
-- Never use: "terrifying", "horrifying", "chilling", "spine-tingling", "nightmare" \
-  as adjectives — let the facts speak
-- No headers, no labels, no markdown in your output
-- The seven fields should read as one continuous story when read aloud in sequence
-
-Output ONLY valid JSON. No prose outside the JSON. No markdown. No code fences.
+━━━ HARD RULES ━━━
+- narrator_gender: "female" or "male" — read the pronouns and relationships in the source. Default "male" if ambiguous.
+- First person throughout. Every section. Always "I."
+- Never fabricate a detail not present in the source story.
+- Never describe a reaction before describing the thing that caused it.
+- Banned adjectives: "terrifying", "horrifying", "chilling", "spine-tingling", "nightmare" — the facts speak for themselves.
+- The seven fields must read as one continuous story when spoken aloud in sequence.
+- Output ONLY valid JSON. No prose outside the JSON. No markdown. No code fences.
 """
 
 _USER_TEMPLATE = """\
-Turn the following Reddit horror story into a first-person narration script. \
-Retell it as if it happened to you. Stay true to the source — do not invent details.
+Retell the following Reddit horror story as a first-person narration script, \
+as if every event in it happened to you personally. Stay true to the source. Do not invent details.
+
+BEFORE YOU WRITE: Read the source story all the way to the end. \
+List, in order, every major dramatic event — not just the first unsettling moment, but every one through the final line. \
+The story may have a childhood frame (an early memory described briefly) followed by a longer, more dramatic main story. \
+If so: the childhood memory belongs in SETUP or early ESCALATION. The main story is where your CLIMAX lives. \
+Your CLIMAX must cover the FINAL and WORST revelation in the entire story — \
+the last moment where full understanding arrived and nothing could be the same afterward. \
+Describe every physical detail of what was there at that final moment.
 
 TITLE: {story_title}
 
 SOURCE STORY:
 {story_body}
 
-Target: {target_words} words total across all seven fields combined.
+Target length: {target_words} words total across all seven fields combined. \
+Distribute the words to give each section its natural weight — \
+escalation and climax will need the most room.
 
 Return a JSON object with exactly these keys:
 {{
   "narrator_gender": "male" or "female",
+  "story_beats": "List every major dramatic event from FIRST to LAST. You must reach the FINAL PARAGRAPH — horror stories often have a false climax followed by the true one. Number each beat. The final beat must describe something from the last page of the story. End with: CLIMAX = [the single worst physical event in the entire story, described in one sentence with physical detail].",
+  "key_physical_images": "Quote the source's EXACT words for every physical description of bodies, creatures, wounds, or objects with strong visual detail. Do not paraphrase. These are the raw materials for your hook and climax — you must pull from this list when writing those sections.",
   "intro": "...",
   "hook": "...",
   "setup": "...",
@@ -132,7 +167,7 @@ def write_script(context: dict, config: dict) -> dict:
 
     prompt = _USER_TEMPLATE.format(
         story_title=story["title"],
-        story_body=story["body"][:3500],
+        story_body=story["body"][:50000],
         target_words=target_words,
     )
 
@@ -148,6 +183,12 @@ def write_script(context: dict, config: dict) -> dict:
     )
 
     script = json.loads(response.choices[0].message.content.strip())
+    beats = script.pop("story_beats", None)
+    if beats:
+        print(f"[script_agent] Story beats:\n{beats}")
+    images = script.pop("key_physical_images", None)
+    if images:
+        print(f"[script_agent] Key physical images:\n{images}")
     return {"script": script}
 
 
