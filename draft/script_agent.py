@@ -1,138 +1,138 @@
 """
 script_agent.py
-LLM call #2 in the draft pipeline.
-Given the context object and the stance paragraph, outputs a structured
-60–90 second video script as JSON.
+LLM script writer for first-person horror narration videos.
+
+Given a Reddit horror story, produces a structured spoken-word script
+that plays like a confessional — cinematic, atmospheric, first person.
 
 Output schema:
 {
-  "hook": str,                          # under 15 words, opening statement
-  "body": str,                          # main explanation, 3–4 sentences
-  "counterargument_acknowledgment": str, # 1–2 sentences addressing the strongest counter
-  "conclusion": str,                    # 1–2 sentences, resolves the tension
-  "cta": str                            # 1 sentence call to action
+  "narrator_gender":     str,  # "female" or "male" — inferred from the original poster's perspective
+  "intro":               str,  # 1-2 sentences — narrator reads the post title like they're recalling it
+  "hook":                str,  # one sentence — the single most disturbing moment, mid-action
+  "setup":               str,  # 3-5 sentences — ground the viewer in time, place, and who you were
+  "escalation":          str,  # 5-8 sentences — the slow build, wrong details stacking up
+  "climax":              str,  # 3-5 sentences — the worst moment, fully realised
+  "aftermath":           str,  # 2-4 sentences — what came after, left unresolved
+  "engagement_question": str   # one question to the viewer, story-specific
 }
 """
 
 import json
 import os
+import random
 import openai
 from dotenv import load_dotenv
 
 load_dotenv()
 
 _SYSTEM_PROMPT = """\
-You are a writer for unsolved mysteries short-form videos on Facebook Reels, TikTok, \
-and Pinterest. Your audience loves true crime, cold cases, and unexplained disappearances. \
-They scroll fast — you have 3 seconds to stop them.
+You are a first-person horror narrator. You take real scary stories from Reddit and \
+retell them as if they happened to YOU — spoken aloud, confessional, past tense. \
+Your voice is calm but unsettled. You remember every detail. You are still not over it.
 
-Your scripts follow this formula:
-1. HOOK — one sentence, under 12 words. State the core mystery as a plain fact. \
-   No adjectives. No dramatic language. No case-specific names or dates. \
-   Format: "[Subject] [what happened]." \
-   Examples: "A woman vanished and was never found." \
-             "He disappeared the night before his wedding." \
-             "A family of four went missing without a trace." \
-   Wrong: "The chilling disappearance of Christina Plante still haunts investigators." \
-   Wrong: "In 1987, a shocking mystery unfolded in rural Louisiana."
-2. BODY — stretch out the background. Give full context: who the victim was, the timeline, \
-   key events in order, the facts as confirmed. Make the viewer feel like they know this \
-   person and understand exactly what happened up to the point it became a mystery. \
-   5–7 sentences. Do not rush this section.
-3. THEORIES — explicitly name every theory the community has raised and explain each one. \
-   Don't just state "some believe X" — briefly explain the reasoning or evidence behind it \
-   so a viewer unfamiliar with the case understands why people believe it. \
-   "Some believe X because Y. Others point to Z, citing the fact that..." \
-   Cover all major theories. 4–6 sentences.
-4. COUNTERARGUMENT — 1–2 sentences acknowledging the skeptical take or the official \
-   explanation, delivered respectfully.
-5. CONCLUSION — 1–2 sentences. Restate what remains unknown. Treat the subject with dignity.
-6. ENGAGEMENT QUESTION — end with a direct question to the viewer. Something that invites \
-   them to pick a side or share knowledge. "Which theory do you believe?" or \
-   "What do you think really happened?" — make it specific to the case.
+Think of your script as a film told entirely in voiceover. It should flow like \
+spoken prose — natural rhythm, short punchy sentences breaking long ones, the kind \
+of pacing that pulls someone deeper with every sentence. No chapter headings. No clinical sections. \
+Just a story told the way you would tell it to someone at 3am who asked what the \
+scariest thing that ever happened to you was.
 
-Rules:
-- Always refer to victims by name, not "the victim"
-- Never state a theory as fact
-- Professional tone throughout — curious and investigative, never exploitative
-- Target length: see user prompt for word count
+Script structure (write each section as continuous prose, not bullet points):
 
-You output ONLY valid JSON. No prose, no markdown, no code fences.
+INTRO
+1–2 sentences. State the title of the post exactly as written, then immediately move into the story. \
+No commentary on the title. No "I called it that" or "that felt like the right name." \
+Just say it — then go. Spoken, first person, past tense. \
+Strong: "Something was in my house for three weeks before I knew. And by the time I knew, it was too late to pretend otherwise." \
+Strong: "The shadow on the monitor. That's where it started." \
+Weak: "I called it 'X' because..." Weak: "This story is called..." Weak: "Today I'm going to tell you about..."
+
+HOOK
+One sentence. Under 15 words. Drop the viewer straight into the worst moment — \
+as if they walked in mid-sentence. No setup, no "so this happened." \
+Use "I" or "my." Make it specific and visual. \
+Strong: "I came home and every door in the house was open, including the ones that lock from the inside." \
+Strong: "There were footprints in the flour I'd left on the counter — and they didn't come from the front door." \
+Weak: "Something really scary happened to me." Weak: "I've never told anyone this before."
+
+SETUP
+3–5 sentences. Ground the viewer. Tell them who you were, where you lived, what life \
+looked like before. Be specific — not "an old house" but "a two-bedroom off Route 9 \
+where the heat never worked right." Normality makes what follows feel real.
+
+ESCALATION
+5–8 sentences. This is the slow burn. Stack the wrong details one at a time — \
+each one slightly worse, each one easy enough to explain away on its own. \
+The viewer should feel the dread building before they can name it. \
+Write the way memory actually works: "At first I thought..." "I told myself..." \
+"But then I noticed..." Let denial and fear fight each other on the page.
+
+CLIMAX
+3–5 sentences. The moment everything breaks open. What you saw, heard, or understood. \
+Do not soften it. Do not cut away. Name the specific detail that made it undeniable. \
+Short sentences. Let the white space do work.
+
+AFTERMATH
+2–4 sentences. What came after. Leave it where the original story left it — \
+do not invent resolution. If it's still unresolved, say so. \
+The last sentence should linger.
+
+OUTRO
+1–2 sentences. A quiet closing line — not a question, not a moral. \
+Echo something from the intro or hook, recontextualised now that the story is done. \
+It should feel like the door closing. \
+Strong: "I never did find out what was in that room. I stopped wanting to." \
+Strong: "That was three years ago. I still check the locks twice." \
+Weak: "Have you ever experienced something like this?" Weak: "Let me know in the comments."
+
+Hard rules:
+- Set "narrator_gender" to "female" or "male" based on clues in the source story (pronouns, relationships, context). Default to "male" if genuinely ambiguous.
+- Always write as "I" — first person throughout, every section
+- Never fabricate details not present in the source story
+- Never use: "terrifying", "horrifying", "chilling", "spine-tingling", "nightmare" \
+  as adjectives — let the facts speak
+- No headers, no labels, no markdown in your output
+- The seven fields should read as one continuous story when read aloud in sequence
+
+Output ONLY valid JSON. No prose outside the JSON. No markdown. No code fences.
 """
 
 _USER_TEMPLATE = """\
-Write a short-form video script about the following unsolved case.
+Turn the following Reddit horror story into a first-person narration script. \
+Retell it as if it happened to you. Stay true to the source — do not invent details.
 
-CASE: {theory_title}
+TITLE: {story_title}
 
-POST (full original writeup — use this as your primary source of facts and detail):
-{theory_body}
+SOURCE STORY:
+{story_body}
 
-ANALYSIS (editorially guides framing, not facts): {stance_paragraph}
+Target: {target_words} words total across all seven fields combined.
 
-CONFIRMED FACTS from the discussion:
-{supporting}
-
-THEORIES FROM THE COMMUNITY:
-{theories}
-
-STRONGEST SKEPTICAL TAKE:
-{counter}
-
-BACKGROUND CONTEXT (related cases / prior discussion):
-{canon}
-
-Target length: {target_words} words total across all fields combined.
-
-Output a JSON object with exactly these fields:
+Return a JSON object with exactly these keys:
 {{
+  "narrator_gender": "male" or "female",
+  "intro": "...",
   "hook": "...",
-  "body": "...",
-  "theories": "...",
-  "counterargument_acknowledgment": "...",
-  "conclusion": "...",
-  "engagement_question": "..."
+  "setup": "...",
+  "escalation": "...",
+  "climax": "...",
+  "aftermath": "...",
+  "outro": "..."
 }}
 """
 
 
-def _format_comments(comments: list[dict], limit: int = 5) -> str:
-    if not comments:
-        return "None"
-    return "\n".join(f"- {c['body'][:300]}" for c in comments[:limit])
+def write_script(context: dict, config: dict) -> dict:
+    story = context["the_theory"]
 
-
-def _format_canon(chunks: list[dict]) -> str:
-    if not chunks:
-        return "None"
-    return "\n\n".join(f"[{c['subreddit']}] {c['text'][:400]}" for c in chunks[:3])
-
-
-def write_script(context: dict, stance: dict, config: dict) -> dict:
-    """
-    Args:
-        context: Output of context_builder.build_context.
-        stance:  Output of stance_agent.run.
-        config:  Parsed config.yaml dict.
-
-    Returns:
-        Dict with 'script' key containing the parsed JSON script object,
-        and 'raw_response' for debugging.
-    """
-    theory = context["the_theory"]
-    debate = context["the_debate"]
-    target_seconds = config["farm"]["target_length_seconds"]
-    # 150 wpm is a comfortable narration pace
-    target_words = int(target_seconds / 60 * 150)
+    t_min = config["farm"].get("target_length_min", 120)
+    t_max = config["farm"].get("target_length_max", 180)
+    target_seconds = random.randint(t_min, t_max)
+    target_words   = int(target_seconds / 60 * 150)
 
     prompt = _USER_TEMPLATE.format(
-        theory_title=theory["title"],
-        theory_body=theory["body"][:2500],
-        stance_paragraph=stance["stance_paragraph"],
-        supporting=_format_comments(debate.get("supporting_evidence", [])),
-        theories=_format_comments(debate.get("related_theory", []), limit=5),
-        counter=_format_comments(debate.get("counterargument", [])),
-        canon=_format_canon(context.get("the_canon", [])),
+        story_title=story["title"],
+        story_body=story["body"][:3500],
         target_words=target_words,
     )
 
@@ -142,29 +142,19 @@ def write_script(context: dict, stance: dict, config: dict) -> dict:
         max_tokens=config["llm"]["max_tokens"],
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
+            {"role": "user",   "content": prompt},
         ],
         response_format={"type": "json_object"},
     )
 
-    raw = response.choices[0].message.content.strip()
-
-    # Strip any accidental markdown fences before parsing
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    script = json.loads(raw)
-    return {"script": script, "raw_response": raw}
+    script = json.loads(response.choices[0].message.content.strip())
+    return {"script": script}
 
 
-def run(context: dict, stance: dict, config: dict) -> dict:
+def run(context: dict, config: dict) -> dict:
     """Entry point called by main.py."""
-    result = write_script(context, stance, config)
-    word_count = sum(
-        len(str(v).split()) for v in result["script"].values()
-    )
+    result = write_script(context, config)
+    word_count = sum(len(str(v).split()) for v in result["script"].values())
     print(f"[script_agent] Script written ({word_count} words total).")
     return result
 
@@ -177,28 +167,14 @@ if __name__ == "__main__":
 
     test_ctx = {
         "the_theory": {
-            "title": "The Great Filter is behind us",
-            "body": "Most civilisations die before multicellular life.",
-            "core_claim": "The Great Filter is behind us.",
-            "subreddit": "Fermi",
-            "post_id": "test_001",
-        },
-        "the_debate": {
-            "supporting_evidence": [{"body": "Cambrian explosion took 3.5B years.", "score": 900}],
-            "counterargument": [{"body": "Filter could still be ahead of us.", "score": 600}],
-            "related_theory": [],
-            "emotional_reaction": [],
-        },
-        "the_canon": [],
-        "the_signal": {"upvote_ratio": 0.92, "num_comments": 312, "score": 4500},
-    }
-    test_stance = {
-        "stance_paragraph": (
-            "The evidence leans toward the Great Filter being behind us, "
-            "with eukaryotic life as the rare bottleneck. Confidence: medium. "
-            "The most important caveat is that we cannot rule out a second filter ahead."
-        )
+            "title":     "Something was in my house for three weeks before I knew",
+            "body":      "I kept hearing footsteps above me. I live in a one-story house. "
+                         "At first I thought it was the pipes. Then I thought it was a raccoon. "
+                         "Then one night I found the attic hatch open and a sleeping bag inside.",
+            "subreddit": "TrueScaryStories",
+            "post_id":   "test_001",
+        }
     }
 
-    result = run(test_ctx, test_stance, cfg)
+    result = run(test_ctx, cfg)
     print(json.dumps(result["script"], indent=2))

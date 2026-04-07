@@ -23,10 +23,8 @@ def fetch_posts(config: dict) -> list[dict]:
     farm_cfg  = config["farm"]
     crawl_cfg = config["crawl"]
 
-    min_ratio          = crawl_cfg["min_upvote_ratio"]
-    min_comments       = crawl_cfg["min_comments"]
-    top_comments_count = crawl_cfg["top_comments_count"]
-    skip_keywords      = [kw.lower() for kw in crawl_cfg.get("skip_title_keywords", [])]
+    min_ratio     = crawl_cfg["min_upvote_ratio"]
+    skip_keywords = [kw.lower() for kw in crawl_cfg.get("skip_title_keywords", [])]
 
     results = []
 
@@ -35,6 +33,9 @@ def fetch_posts(config: dict) -> list[dict]:
         resp = requests.get(url, headers=_HEADERS, timeout=15)
         if resp.status_code in (403, 404):
             print(f"[crawl] Skipping r/{sub_name} — {resp.status_code}")
+            continue
+        if resp.status_code >= 500:
+            print(f"[crawl] Skipping r/{sub_name} — server error {resp.status_code}, will retry next run")
             continue
         resp.raise_for_status()
         posts = resp.json()["data"]["children"]
@@ -45,8 +46,6 @@ def fetch_posts(config: dict) -> list[dict]:
 
             if p.get("upvote_ratio", 0) < min_ratio:
                 continue
-            if p.get("num_comments", 0) < min_comments:
-                continue
             if not p.get("is_self") and not p.get("selftext"):
                 continue
             if any(kw in title_lower for kw in skip_keywords):
@@ -54,8 +53,7 @@ def fetch_posts(config: dict) -> list[dict]:
             if len(p.get("selftext", "").strip()) < 100:
                 continue
 
-            top_comments = _pull_top_comments(sub_name, p["id"], top_comments_count)
-            time.sleep(2)
+            top_comments = []
 
             results.append({
                 "post_id":      p["id"],
