@@ -93,12 +93,18 @@ CLIMAX [4–6 sentences]
 The moment full understanding arrived — not the first disturbing discovery, but the final one. \
 The moment where everything broke and could not be put back. \
 If a person or entity with an unusual physical form appears: describe their body completely. \
-Skin color and texture. Exact limb proportions. Every wound, mutation, or impossible feature. \
-Do not use "monstrous", "creature", "figure", "it", or "thing" as substitutes for physical description — \
-using any of these words where a physical description belongs is a failure. Name what was there. \
-Short sentences. Do not cut away. Do not soften it. \
-Use your key_physical_images list. Every entry that describes the entity or the attack must appear in the climax. \
-Do not select a subset — render all of them. Borrow the source's exact words — do not paraphrase anatomy.
+Build the description one feature at a time — each anatomical detail gets its own sentence or clause. \
+Use your key_physical_images list. Every entry that describes the entity or the attack must appear. \
+Do not compress multiple features into one clause. Do not select a subset. Render all of them. \
+Borrow the source's exact words — do not paraphrase anatomy. \
+Do NOT use "figure", "creature", "it", or "thing" as the subject of a sentence — \
+these words where physical description belongs is a failure. \
+✗ "a towering figure with slick hair and a skull face, claws tearing into him" \
+✓ "Tall as a man, shaped like an ape but lankier. Dark greasy hair — not fur, the kind that hangs \
+off someone who hasn't washed in years, dripping with blood. Claws long and almost human, \
+boney like a skeleton, sharp like razors. The face was gone — just a deer skull with predator teeth, \
+skin around the neck eaten through like a disease had been working at it for years." \
+Short sentences. Do not cut away. Do not soften it.
 
 AFTERMATH [2–4 sentences]
 What came after. Stay exactly where the source story left it — do not invent resolution. \
@@ -117,7 +123,9 @@ It should feel like a door closing on something that will never be fully explain
 ━━━ HARD RULES ━━━
 - narrator_gender: "female" or "male" — read the pronouns and relationships in the source. Default "male" if ambiguous.
 - First person throughout. Every section. Always "I."
-- Never fabricate a detail not present in the source story.
+- Never fabricate a detail not present in the source story. Do not infer from genre conventions — \
+  if the source says the attacker did NOT eat the prey, do not write that it feasted. \
+  Transcribe only what is explicitly stated.
 - Never describe a reaction before describing the thing that caused it.
 - Banned adjectives: "terrifying", "horrifying", "chilling", "spine-tingling", "nightmare" — the facts speak for themselves.
 - The seven fields must read as one continuous story when spoken aloud in sequence.
