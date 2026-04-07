@@ -28,7 +28,7 @@ import yaml
 from crawl import reddit_crawler, cleaner, comment_extractor
 from sense import chunker, embedder
 from draft import context_builder, stance_agent, script_agent, title_generator
-from forge import tts
+from forge import tts, composer
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -55,7 +55,7 @@ def run_crawl(config: dict) -> list[dict]:
     print("\n=== STAGE: crawl ===")
     raw_posts = reddit_crawler.run(config)
     cleaned_posts = cleaner.run(raw_posts)
-    classified_posts = comment_extractor.run(cleaned_posts)
+    classified_posts = comment_extractor.run(cleaned_posts, config)
 
     _save_json(classified_posts, "output/classified_posts.json")
     print(f"[main] Crawl complete. {len(classified_posts)} posts saved.")
@@ -105,17 +105,32 @@ def run_draft(post: dict, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_forge(draft: dict, config: dict) -> str:
+    import time
+    forge_start = time.time()
     print(f"\n=== STAGE: forge [{draft['post_id']}] ===")
 
     post_id = draft["post_id"]
     script = draft["script"]
+    ctx = draft.get("context", {})
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_path = f"output/rendered/{post_id}_{timestamp}.mp3"
+    timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    audio_path  = f"output/rendered/{post_id}_{timestamp}.mp3"
+    output_path = f"output/rendered/{post_id}_{timestamp}.mp4"
 
+    # TTS
     tts_result = tts.run(script, audio_path, config)
-    print(f"[main] Audio complete: {tts_result['wav_path']}")
-    return tts_result["wav_path"]
+    print(f"[main] Audio: {tts_result['wav_path']}")
+
+    # Compose background + opening card + effects
+    post_info = {
+        "hook": script.get("hook", ""),
+    }
+    # Compose + captions in one FFmpeg pass
+    composer.run(tts_result["wav_path"], output_path, config, post_info, tts_result["word_timings"])
+
+    elapsed = time.time() - forge_start
+    print(f"[main] Video complete: {output_path}  ({elapsed:.1f}s to produce)")
+    return output_path
 
 
 # ---------------------------------------------------------------------------

@@ -4,12 +4,24 @@ farm:
   subreddits:
     - UnresolvedMysteries
   tone: curious_investigative
-  target_length_seconds: 110
+  target_length_min: 80
+  target_length_max: 170
 
 crawl:
   min_upvote_ratio: 0.85
   min_comments: 50
   top_comments_count: 20
+  skip_title_keywords:
+    - meta monday
+    - what are you
+    - weekly thread
+    - daily thread
+    - write your own
+    - weekly discussion
+    - monthly thread
+    - off topic
+    - mod post
+    - mod announcement
 
 sense:
   chunk_size: 200
@@ -25,7 +37,8 @@ forge:
   resolution: "1080x1920"
   fps: 30
   tts_engine: edge
-  caption_words_per_frame: 3
+  tts_rate: "+5%"
+  caption_words_per_frame: 2
 
 output:
   queue_dir: output/queue

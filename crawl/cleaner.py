@@ -80,14 +80,3 @@ def run(raw_posts: list[dict]) -> list[dict]:
     return cleaned
 
 
-if __name__ == "__main__":
-    import json
-    import yaml
-
-    with open("output/raw_posts.json") as f:
-        raw = json.load(f)
-
-    result = run(raw)
-    with open("output/cleaned_posts.json", "w") as f:
-        json.dump(result, f, indent=2)
-    print(f"Wrote {len(result)} cleaned posts to output/cleaned_posts.json")
