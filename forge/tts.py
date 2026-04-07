@@ -16,6 +16,7 @@ Word timing format:
 
 import asyncio
 import os
+import random
 import re
 import subprocess
 from pathlib import Path
@@ -224,7 +225,8 @@ def _detect_voice(text: str) -> str:
 def _run_openai_tts(text: str, output_path: str, config: dict, narrator_gender: str = "male") -> list[dict]:
     import openai
     client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    voice = _detect_voice(text)
+    voice = config["forge"].get("openai_tts_voice", "onyx")
+    print(f"[tts] Voice: {voice} (from config)")
     model  = config["forge"].get("openai_tts_model", "tts-1-hd")
 
     response = client.audio.speech.create(
@@ -276,8 +278,6 @@ def _run_elevenlabs(text: str, output_path: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
-
-import random
 
 def synthesise(script: dict, output_path: str, config: dict) -> dict:
     """
