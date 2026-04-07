@@ -28,16 +28,14 @@ load_dotenv()
 # Script assembly
 # ---------------------------------------------------------------------------
 
+_NARRATION_ORDER = [
+    "intro", "hook", "setup", "escalation", "climax", "aftermath", "outro",
+]
+
+
 def assemble_narration(script: dict) -> str:
-    """Join script fields in narration order. CTA excluded from audio."""
-    parts = [
-        script.get("hook", ""),
-        script.get("body", ""),
-        script.get("theories", ""),
-        script.get("counterargument_acknowledgment", ""),
-        script.get("conclusion", ""),
-        script.get("engagement_question", ""),
-    ]
+    """Join script fields in narration order."""
+    parts = [script.get(field, "") for field in _NARRATION_ORDER]
     return " ".join(p for p in parts if p).strip()
 
 
@@ -97,9 +95,10 @@ async def _edge_synthesise_async(text: str, audio_path: str, vtt_path: str, rate
 def _pick_voice() -> str:
     """Pick a random narrator voice. Called per synthesis so each video varies."""
     return random.choice([
-        "en-GB-RyanNeural",        # British, investigative
-        "en-US-EricNeural",        # American, warm
-        "en-US-ChristopherNeural", # American, deep
+        "en-US-ChristopherNeural", # American, deep and authoritative
+        "en-US-GuyNeural",         # American, slow and heavy
+        "en-IE-ConnorNeural",      # Irish, quiet and unsettling
+        "en-AU-WilliamNeural",     # Australian, grounded — sounds like someone who lived it
     ])
 
 
@@ -152,38 +151,27 @@ def _run_edge_tts(text: str, output_path: str, rate: str = "+0%") -> list[dict]:
     return timings
 
 
-def _whisper_align_timings(audio_path: str) -> list[dict]:
-    """
-    Post-process the generated audio through OpenAI Whisper to get word-level
-    timestamps that perfectly reflect actual speech — including pauses and
-    speed variations.
+_stable_model = None
 
-    Cost: ~$0.006/min (~$0.01 per video).
-    """
-    import openai
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return []
-    client = openai.OpenAI(api_key=api_key)
+def _stable_ts_align(audio_path: str, text: str) -> list[dict]:
+    """Forced alignment via stable-ts — maps every word in `text` to the audio."""
+    global _stable_model
     try:
-        with open(audio_path, "rb") as f:
-            result = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                response_format="verbose_json",
-                timestamp_granularities=["word"],
-            )
-        words = getattr(result, "words", None) or []
-        if not words:
-            return []
-        timings = [
-            {"word": w.word.strip(), "start": w.start, "end": w.end}
-            for w in words if w.word.strip()
-        ]
-        print(f"[tts] Whisper alignment: {len(timings)} words synced to actual audio")
+        import stable_whisper
+        if _stable_model is None:
+            print("[tts] Loading stable-ts model (first run only)...")
+            _stable_model = stable_whisper.load_model("base")
+        result = _stable_model.align(audio_path, text, language="en")
+        timings = []
+        for seg in result.segments:
+            for w in (seg.words or []):
+                word = w.word.strip()
+                if word:
+                    timings.append({"word": word, "start": round(w.start, 3), "end": round(w.end, 3)})
+        print(f"[tts] stable-ts alignment: {len(timings)} words")
         return timings
     except Exception as e:
-        print(f"[tts] Whisper alignment failed ({e}) — falling back")
+        print(f"[tts] stable-ts alignment failed ({e})")
         return []
 
 
@@ -207,6 +195,50 @@ def _estimate_word_timings(text: str, audio_path: str) -> list[dict]:
     for word in words:
         timings.append({"word": word, "start": round(t, 3), "end": round(t + per_word, 3)})
         t += per_word
+    return timings
+
+
+# ---------------------------------------------------------------------------
+# OpenAI TTS (onyx)
+# ---------------------------------------------------------------------------
+
+_FEMALE_WORDS = ["boyfriend", "husband", "fiancé", "fiancee", "fiance"]
+_MALE_WORDS   = ["girlfriend", "wife", "fiancée"]
+
+
+def _detect_voice(text: str) -> str:
+    lowered = text.lower()
+    female_hits = sum(1 for w in _FEMALE_WORDS if w in lowered)
+    male_hits   = sum(1 for w in _MALE_WORDS   if w in lowered)
+    if female_hits > male_hits:
+        print(f"[tts] Voice: nova (female signal: {female_hits})")
+        return "nova"
+    if male_hits > female_hits:
+        print(f"[tts] Voice: onyx (male signal: {male_hits})")
+        return "onyx"
+    voice = random.choice(["onyx", "nova"])
+    print(f"[tts] Voice: {voice} (no signal — random)")
+    return voice
+
+
+def _run_openai_tts(text: str, output_path: str, config: dict, narrator_gender: str = "male") -> list[dict]:
+    import openai
+    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    voice = _detect_voice(text)
+    model  = config["forge"].get("openai_tts_model", "tts-1-hd")
+
+    response = client.audio.speech.create(
+        model=model,
+        voice=voice,
+        input=text,
+        response_format="mp3",
+    )
+    with open(output_path, "wb") as f:
+        f.write(response.content)
+
+    timings = _stable_ts_align(output_path, text)
+    if not timings:
+        timings = _estimate_word_timings(text, output_path)
     return timings
 
 
@@ -279,7 +311,19 @@ def synthesise(script: dict, output_path: str, config: dict) -> dict:
         word_timings = _run_elevenlabs(text, output_path)
         print(f"[tts] ElevenLabs synthesis complete: {output_path}")
 
+    elif engine == "openai":
+        if output_path.endswith(".wav"):
+            output_path = output_path[:-4] + ".mp3"
+        narrator_gender = script.get("narrator_gender", "male")
+        word_timings = _run_openai_tts(text, output_path, config, narrator_gender)
+        print(f"[tts] OpenAI TTS ({narrator_gender}) synthesis complete: {output_path}")
+
     else:
-        raise ValueError(f"Unknown TTS engine: '{engine}'. Use 'edge' or 'elevenlabs'.")
+        raise ValueError(f"Unknown TTS engine: '{engine}'. Use 'edge', 'elevenlabs', or 'openai'.")
 
     return {"wav_path": output_path, "word_timings": word_timings}
+
+
+def run(script: dict, output_path: str, config: dict) -> dict:
+    """Entry point called by main.py."""
+    return synthesise(script, output_path, config)

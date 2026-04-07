@@ -1,44 +1,38 @@
 farm:
-  name: signaldrift
-  niche: unsolved_mysteries
+  name: signaldrift_horror
+  niche: first_person_horror
   subreddits:
-    - UnresolvedMysteries
-  tone: curious_investigative
-  target_length_min: 80
-  target_length_max: 170
+    - TrueScaryStories
+    - nosleep
+    - scarystories
+  tone: dread_buildup
+  target_length_min: 120
+  target_length_max: 180
 
 crawl:
-  min_upvote_ratio: 0.85
-  min_comments: 50
-  top_comments_count: 20
+  min_upvote_ratio: 0.80
   skip_title_keywords:
-    - meta monday
-    - what are you
     - weekly thread
     - daily thread
-    - write your own
-    - weekly discussion
     - monthly thread
-    - off topic
     - mod post
     - mod announcement
-
-sense:
-  chunk_size: 200
-  chunk_overlap: 20
-  top_k_retrieval: 20
-  top_k_rerank: 5
+    - off topic
+    - story prompt
+    - writing prompt
+    - meta
 
 llm:
   model: gpt-4o-mini
-  max_tokens: 1800
+  max_tokens: 2500
 
 forge:
   resolution: "1080x1920"
   fps: 30
-  tts_engine: edge
-  tts_rate: "+5%"
-  caption_words_per_frame: 2
+  tts_engine: openai
+  openai_tts_voice: onyx
+  openai_tts_model: tts-1
+  caption_words_per_frame: 1
 
 output:
   queue_dir: output/queue
