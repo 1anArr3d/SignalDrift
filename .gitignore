@@ -1,17 +1,29 @@
+# --- System / IDE ---
 .env
 __pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-qdrant_storage/
-output/raw_posts.json
-output/cleaned_posts.json
-output/classified_posts.json
-output/chunks.json
+*.py[cod]
+*$py.class
+.vscode/
+.idea/
+
+# --- Pipeline Data (Root) ---
+# Keeping the output folder structure but ignoring the files inside
 output/queue/*.json
 output/rendered/*.mp4
-output/rendered/*.wav
 output/rendered/*.mp3
-output/archive/
-output/tracker.csv
-assets/backgrounds/
+output/rendered/*.ass
+output/classified_posts.json
+output/seen_posts.json
+
+# --- Assets ---
+# You want to keep the folders, but don't track 100MB video/audio loops
+assets/backgrounds/*
+assets/music/*
+!assets/backgrounds/.gitkeep
+!assets/music/.gitkeep
+
+# --- Legacy Cleanup ---
+# Deletes references to the old "theory farm" files
+qdrant_storage/
+*.csv
+output/*.json
