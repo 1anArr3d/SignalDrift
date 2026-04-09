@@ -26,8 +26,8 @@ llm:
 # TTS Settings
 tts:
   engine: "azure"
-  voice: "en-US-ChristopherNeural"
-  rate: "30%"
+  voice: "en-US-EricNeural"
+  rate: "25%"
   pitch: "+0st"
 
 # Video Assembly Settings
