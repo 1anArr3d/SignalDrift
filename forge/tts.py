@@ -1,42 +1,61 @@
 import os
-from openai import OpenAI
-import stable_whisper
+import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
 
 load_dotenv()
 
 def run(script_text: str, output_path: str, config: dict) -> dict:
-    """
-    Generates audio via OpenAI TTS and aligns words using stable-whisper.
-    """
-    print(f"[tts] Generating audio for script ({len(script_text.split())} words)...")
-    
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     tts_cfg = config.get("tts", {})
+    voice = tts_cfg.get("voice", "en-US-SteffanNeural")
 
-    # 1. Generate Audio
-    response = client.audio.speech.create(
-        model=tts_cfg.get("model", "tts-1"),
-        voice=tts_cfg.get("voice", "shimmer"),
-        input=script_text
+    speech_key = os.environ.get("AZURE_SPEECH_KEY")
+    speech_region = os.environ.get("AZURE_SPEECH_REGION")
+
+    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
+    speech_config.set_speech_synthesis_output_format(
+        speechsdk.SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm
     )
-    response.stream_to_file(output_path)
+    speech_config.speech_synthesis_voice_name = voice
 
-    # 2. Align Timings (Stable-Whisper)
-    # We use 'base' because it's fast and accurate enough for captions
-    print("[tts] Aligning subtitles...")
-    model = stable_whisper.load_model('base')
-    result = model.align(output_path, script_text, language='en')
-    
-    # Flatten the result into a simple list of word timings for the composer
+    audio_config = speechsdk.audio.AudioOutputConfig(filename=output_path)
+    synthesizer = speechsdk.SpeechSynthesizer(
+        speech_config=speech_config,
+        audio_config=audio_config
+    )
+
+    words = script_text.split()
     word_timings = []
-    for segment in result.segments:
-        for word in segment.words:
+
+    def on_word_boundary(evt):
+        if evt.boundary_type == speechsdk.SpeechSynthesisBoundaryType.Word:
+            start = evt.audio_offset / 10_000_000  # ticks to seconds
+            duration = evt.duration.total_seconds()
             word_timings.append({
-                "word": word.word,
-                "start": word.start,
-                "end": word.end
+                "word": evt.text,
+                "start": start,
+                "end": start + duration
             })
+
+    synthesizer.synthesis_word_boundary.connect(on_word_boundary)
+
+    rate = tts_cfg.get("rate", "90%")
+    pitch = tts_cfg.get("pitch", "-2st")
+    ssml = (
+        f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
+        f'<voice name="{voice}">'
+        f'<prosody rate="{rate}" pitch="{pitch}">'
+        f'{script_text}'
+        f'</prosody></voice></speak>'
+    )
+
+    print(f"[tts] Synthesizing {len(words)} words with {voice}...")
+    result = synthesizer.speak_ssml_async(ssml).get()
+
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        print(f"[tts] Done. {len(word_timings)} word timings returned.")
+    else:
+        cancellation = result.cancellation_details
+        raise RuntimeError(f"Azure TTS failed: {cancellation.reason} — {cancellation.error_details}")
 
     return {
         "wav_path": output_path,
