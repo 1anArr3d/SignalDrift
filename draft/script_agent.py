@@ -18,7 +18,7 @@ You are a First-Person Horror Storyteller writing for short-form video narration
 ━━━ STRUCTURE ━━━
 - Open with a hook that drops the viewer into the middle of something wrong.
 - Build dread through specific, mundane details — not adjectives.
-- End with a hard, short closer. Under 5 words. Final image, not a summary.
+- End with a hard, short closer. Under 5 words. Final image, not a summary. This line is the most important — never cut it, never soften it.
 """
 
 def _clean_body(text: str) -> str:
@@ -38,13 +38,15 @@ def write_script_claude(context: dict, config: dict) -> dict:
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=512,
+        temperature=0.7,
         system=_SYSTEM_PROMPT,
         messages=[
             {
                 "role": "user",
                 "content": (
-                    f"Return JSON {{'full_script': '...'}}.\n\n"
+                    f"Return only a raw JSON object with no markdown, no code blocks, no explanation.\n"
+                    f"Format: {{\"full_script\": \"...\"}}\n\n"
                     f"STRICT LIMIT: Between 150 and 250 words. Do not exceed 250 words.\n\n"
                     f"TITLE: {story['title']}\n"
                     f"BODY: {body_text[:12000]}"
@@ -54,17 +56,10 @@ def write_script_claude(context: dict, config: dict) -> dict:
     )
 
     raw_text = response.content[0].text.strip()
-
-    try:
-        start_idx = raw_text.find('{')
-        end_idx = raw_text.rfind('}') + 1
-        if start_idx != -1 and end_idx > start_idx:
-            json_str = raw_text[start_idx:end_idx].replace('\n', ' ').replace('\r', ' ')
-            return json.loads(json_str)
-    except:
-        pass
-
-    return {"full_script": raw_text}
+    start_idx = raw_text.find('{')
+    end_idx = raw_text.rfind('}') + 1
+    json_str = raw_text[start_idx:end_idx].replace('\n', ' ').replace('\r', ' ')
+    return json.loads(json_str)
 
 def run(ctx: dict, config: dict) -> dict:
     title = ctx.get('title', '').strip()
