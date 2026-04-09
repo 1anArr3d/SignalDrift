@@ -27,3 +27,4 @@ assets/music/*
 qdrant_storage/
 *.csv
 output/*.json
+creds.json

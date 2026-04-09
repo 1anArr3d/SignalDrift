@@ -25,10 +25,10 @@ llm:
 
 # TTS Settings
 tts:
-  engine: "openai"
-  voice: "shimmer"
-  model: "tts-1"
-  rate: "+0%"
+  engine: "azure"
+  voice: "en-US-ChristopherNeural"
+  rate: "30%"
+  pitch: "+0st"
 
 # Video Assembly Settings
 video:
