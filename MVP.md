@@ -131,3 +131,27 @@ ANTHROPIC_API_KEY=
 AZURE_SPEECH_KEY=
 AZURE_SPEECH_REGION=
 ```
+
+---
+
+## Roadmap
+
+### Near-term
+- **`--post-id` + `--stage forge` bug** — `--post-id` currently bypasses `--stage`, always re-drafts. Needs a one-line fix in `main.py`.
+- **Female TTS routing** — scorer already planned to return `narrator_gender`. Route female-narrator stories to a second Azure voice automatically.
+- **Gender field in scorer** — add `narrator_gender: male | female | neutral` to `crawl/scorer.py` JSON output.
+
+### Data & ML
+- **Performance tracker** — log every rendered video: story category, word count, script score, game used, posting time. Store in `output/performance_log.json`.
+- **TikTok metric ingestion** — pull views, saves, watch time and join on `#sd<post_id>` tag to link performance back to source post in `sunset_posts.json`.
+- **Post classifier** — once 50–100 videos have metrics, train a logistic regression on text embeddings to predict high/low performer. Replaces the heuristic Haiku scorer with a data-driven one.
+- **False positive isolation** — log which game clip was used per video so you can separate "bad story" from "bad clip" in the performance data.
+
+### Scale
+- **Synthetic story generation** — feed top-performing scripts as examples to Claude, generate original stories in the same style. Patches the hole when Reddit supply runs thin.
+- **Multi-account / multi-niche** — AITAH and space-theory farms planned. Only prompts + subreddit config swap between farms; pipeline stays identical.
+- **`--count N` batch scheduling** — cron or scheduled trigger to run `python main.py --count 5` daily at 3pm automatically.
+
+### Slicer
+- **Motion threshold tuning per game** — expose `motion_percentile` as a per-subreddit-style config so slow horror games and fast FPS games each use the right floor.
+- **Post-slice cleanup** — optionally delete source file from `slicer/input/` after processing to save disk space.
