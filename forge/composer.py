@@ -4,6 +4,7 @@ import textwrap
 from pathlib import Path
 import ffmpeg
 from PIL import Image, ImageDraw, ImageFont
+import shutil
 
 # Constants
 _FONT_FILE = "C:/Windows/Fonts/arial.ttf"
@@ -109,4 +110,7 @@ def compose(audio_path: str, output_path: str, config: dict, post_info: dict,
                       ).overwrite_output().run(capture_stdout=True, capture_stderr=True)
     except ffmpeg.Error as e:
         print(f"FFMPEG ERROR: {e.stderr.decode()}")
+    finally:
+        shutil.rmtree(_TEMP_DIR, ignore_errors=True)
+
     return output_path

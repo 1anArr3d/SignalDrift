@@ -123,8 +123,8 @@ def run_forge(draft: dict, config: dict) -> str:
     post_id = draft["post_id"]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    audio_path = str(Path(f"output/rendered/{post_id}_{timestamp}.mp3"))
-    video_path = str(Path(f"output/rendered/{post_id}_{timestamp}.mp4"))
+    audio_path = str(Path(f"output/rendered/{post_id}.mp3"))
+    video_path = str(Path(f"output/rendered/{post_id}.mp4"))
 
     # Get next background clip from rotation pool
     bg_path = get_next_clip()
@@ -196,26 +196,32 @@ def run_pipeline(config: dict, count: int = 1) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", choices=["crawl", "draft", "forge"])
-    parser.add_argument("--post-id")
+    parser.add_argument("--stage", choices=["crawl", "forge"])
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
 
     config = load_config(args.config)
 
-    if args.post_id:
-        posts = _load_json(_CLASSIFIED)
-        match = next((p for p in posts if p["post_id"] == args.post_id), None)
-        if match:
-            draft = run_draft(match, config)
-            run_forge(draft, config)
-    elif args.stage == "crawl":
+    if args.stage == "crawl":
         run_crawl(config)
+
     elif args.stage == "forge":
-        queue = list(Path("output/queue").glob("*.json"))[:args.count]
-        for p in queue:
-            run_forge(_load_json(str(p)), config)
+        # Draft then forge the top N scored posts from classified
+        seen = _load_seen()
+        posts = _load_json(_CLASSIFIED)
+        to_process = [p for p in posts if p["post_id"] not in seen]
+        to_process = sorted(to_process, key=lambda x: x.get("score", {}).get("overall", 0), reverse=True)[:args.count]
+        if not to_process:
+            print("[main] No posts available. Run --stage crawl first.")
+            return
+        for post in to_process:
+            try:
+                draft = run_draft(post, config)
+                run_forge(draft, config)
+            except Exception as e:
+                print(f"[main] FAILED post {post['post_id']}: {e}")
+
     else:
         run_pipeline(config, count=args.count)
 

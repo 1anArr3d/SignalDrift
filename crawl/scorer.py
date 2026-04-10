@@ -84,6 +84,14 @@ def score_post(post: dict) -> dict:
             messages=[{"role": "user", "content": prompt}]
         )
         raw = message.content[0].text.strip()
+        # Strip markdown code fences if model wraps response
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+        if not raw:
+            raise ValueError(f"Empty response from model. Full content: {message.content}")
         result = json.loads(raw)
     except Exception as e:
         print(f"  [scorer] Error on '{title[:50]}': {e}")
