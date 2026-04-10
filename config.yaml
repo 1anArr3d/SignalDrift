@@ -6,9 +6,18 @@ brand:
 # Reddit Crawler Settings (REQUIRED for your crawler)
 farm:
   subreddits:
-    - "nosleep"
-    - "shortscarystories"
-
+    - name: "nosleep"
+      min_score: 300
+      tier: "primary"
+    - name: "shortscarystories"
+      min_score: 150
+      tier: "secondary"
+    - name: "paranormal"
+      min_score: 100
+      tier: "secondary"
+    - name: "glitch_in_the_matrix"
+      min_score: 100
+      tier: "secondary"
 
 crawl:
   min_upvote_ratio: 0.8
@@ -18,16 +27,11 @@ crawl:
     - "Announcement"
     - "Mod Post"
 
-# LLM for Script Writing
-llm:
-  model: "gpt-4o"
-  max_tokens: 3500
-
 # TTS Settings
 tts:
   engine: "azure"
   voice: "en-US-EricNeural"
-  rate: "25%"
+  rate: "21%"
   pitch: "+0st"
 
 # Video Assembly Settings

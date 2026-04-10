@@ -8,6 +8,7 @@ import yaml
 
 # Stage imports
 from crawl import reddit_crawler, cleaner
+from crawl.scorer import score_batch
 from draft import script_agent
 from forge import tts, composer
 
@@ -15,7 +16,9 @@ def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
 
-_SEEN_LOG = "output/seen_posts.json"
+_SEEN_LOG      = "output/seen_posts.json"
+_CLASSIFIED    = "output/classified_posts.json"
+_SUNSET        = "output/sunset_posts.json"
 
 # --- JSON Helpers ---
 def _save_json(data, path: str) -> None:
@@ -37,6 +40,31 @@ def _mark_seen(post_id: str) -> None:
         seen.append(post_id)
         _save_json(sorted(seen), _SEEN_LOG)
 
+# --- Sunset helpers ---
+def _load_sunset() -> list:
+    if not Path(_SUNSET).exists(): return []
+    return _load_json(_SUNSET)
+
+def _sunset_posts(posts: list, used_at: str = None, video_path: str = None) -> None:
+    """Append posts to sunset_posts.json, preserving all data + metadata."""
+    archive = _load_sunset()
+    for post in posts:
+        entry = dict(post)
+        if used_at:
+            entry["used_at"] = used_at
+        if video_path:
+            entry["video_path"] = video_path
+        archive.append(entry)
+    _save_json(archive, _SUNSET)
+
+def _remove_from_classified(post_id: str) -> None:
+    """Remove a post from classified_posts.json after it has been used."""
+    if not Path(_CLASSIFIED).exists():
+        return
+    posts = _load_json(_CLASSIFIED)
+    remaining = [p for p in posts if p["post_id"] != post_id]
+    _save_json(remaining, _CLASSIFIED)
+
 # ---------------------------------------------------------------------------
 # Stage: crawl
 # ---------------------------------------------------------------------------
@@ -44,17 +72,25 @@ def run_crawl(config: dict) -> list[dict]:
     print("\n=== STAGE: crawl ===")
     raw_posts = reddit_crawler.run(config)
     cleaned_posts = cleaner.run(raw_posts)
-    _save_json(cleaned_posts, "output/classified_posts.json")
-    print(f"[main] Crawl complete. {len(cleaned_posts)} posts saved.")
-    return cleaned_posts
+
+    # Score — only passed posts enter the queue
+    passed, failed = score_batch(cleaned_posts)
+
+    # Sunset rejected posts immediately — data preserved, not lost
+    if failed:
+        _sunset_posts(failed)
+        print(f"[main] {len(failed)} posts failed scoring → sunset_posts.json")
+
+    _save_json(passed, _CLASSIFIED)
+    print(f"[main] Crawl complete. {len(passed)} posts queued.")
+    return passed
 
 # ---------------------------------------------------------------------------
 # Stage: draft
 # ---------------------------------------------------------------------------
 def run_draft(post: dict, config: dict) -> dict:
     print(f"\n=== STAGE: draft [{post['post_id']}] ===")
-    
-    # Matching the new script_agent expectations
+
     ctx = {
         "title": post["title"],
         "body": post["body"],
@@ -68,7 +104,8 @@ def run_draft(post: dict, config: dict) -> dict:
         "post_id": post["post_id"],
         "subreddit": post["subreddit"],
         "title": post["title"],
-        "script": script_result["script"], # This should now be the string of the story
+        "script": script_result["script"],
+        "tiktok_tag": f"#sd{post['post_id']}",   # tag for performance tracking
     }
 
     queue_path = f"output/queue/{post['post_id']}.json"
@@ -84,24 +121,21 @@ def run_forge(draft: dict, config: dict) -> str:
 
     post_id = draft["post_id"]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Define paths
+
     audio_path = str(Path(f"output/rendered/{post_id}_{timestamp}.mp3"))
     video_path = str(Path(f"output/rendered/{post_id}_{timestamp}.mp4"))
 
-    # 1. TTS & Alignment
     try:
         tts_result = tts.run(draft["script"], audio_path, config)
     except Exception as e:
         print(f"[main] TTS Error: {e}")
         raise
 
-    # 2. Composition
     post_info = {
         "title": draft["title"],
         "subreddit": draft["subreddit"]
     }
-    
+
     composer.compose(
         audio_path=tts_result["wav_path"],
         output_path=video_path,
@@ -111,26 +145,34 @@ def run_forge(draft: dict, config: dict) -> str:
     )
 
     _mark_seen(post_id)
+
+    # Sunset the used post — move out of classified, preserve in archive
+    _remove_from_classified(post_id)
+    _sunset_posts(
+        [{"post_id": post_id, "title": draft["title"], "subreddit": draft["subreddit"],
+          "tiktok_tag": draft.get("tiktok_tag", "")}],
+        used_at=datetime.now().isoformat(),
+        video_path=video_path
+    )
+
     print(f"[main] Video complete: {video_path} ({time.time()-start_time:.1f}s)")
+    print(f"[main] TikTok tag: {draft.get('tiktok_tag', '')}")
     return video_path
 
 # ---------------------------------------------------------------------------
-# Orchestration Logic
+# Orchestration
 # ---------------------------------------------------------------------------
-def run_pipeline(config: dict, limit: int = 5) -> None:
-    # 1. Crawl
+def run_pipeline(config: dict, count: int = 1) -> None:
     posts = run_crawl(config)
     seen = _load_seen()
-    
-    # 2. Filter & Sort
+
     to_process = [p for p in posts if p["post_id"] not in seen]
-    to_process = sorted(to_process, key=lambda x: x.get("score", 0), reverse=True)[:limit]
+    to_process = sorted(to_process, key=lambda x: x.get("score", {}).get("overall", 0), reverse=True)[:count]
 
     if not to_process:
         print("[main] No new posts to process.")
         return
 
-    # 3. Process
     for post in to_process:
         try:
             draft = run_draft(post, config)
@@ -142,24 +184,26 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", choices=["crawl", "draft", "forge"])
     parser.add_argument("--post-id")
-    parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
 
     config = load_config(args.config)
 
     if args.post_id:
-        posts = _load_json("output/classified_posts.json")
+        posts = _load_json(_CLASSIFIED)
         match = next((p for p in posts if p["post_id"] == args.post_id), None)
         if match:
             draft = run_draft(match, config)
             run_forge(draft, config)
+    elif args.stage == "crawl":
+        run_crawl(config)
     elif args.stage == "forge":
-        queue = list(Path("output/queue").glob("*.json"))[:args.limit]
+        queue = list(Path("output/queue").glob("*.json"))[:args.count]
         for p in queue:
             run_forge(_load_json(str(p)), config)
     else:
-        run_pipeline(config, limit=args.limit)
+        run_pipeline(config, count=args.count)
 
 if __name__ == "__main__":
     main()

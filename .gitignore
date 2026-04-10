@@ -5,25 +5,34 @@ __pycache__/
 *$py.class
 .vscode/
 .idea/
+.claude/
 
-# --- Pipeline Data (Root) ---
-# Keeping the output folder structure but ignoring the files inside
+# --- Audio / Video Artifacts ---
+*.wav
+*.mp3
+*.mp4
+
+# --- Pipeline Data ---
 output/queue/*.json
-output/rendered/*.mp4
-output/rendered/*.mp3
-output/rendered/*.ass
+output/rendered/
 output/classified_posts.json
 output/seen_posts.json
+output/crawl_state.json
+output/sunset_posts.json
+tester.py
 
 # --- Assets ---
-# You want to keep the folders, but don't track 100MB video/audio loops
 assets/backgrounds/*
 assets/music/*
 !assets/backgrounds/.gitkeep
 !assets/music/.gitkeep
 
+# --- Slicer ---
+slicer/input/*.mp4
+slicer/background_pool/
+slicer/pool_state.json
+
 # --- Legacy Cleanup ---
-# Deletes references to the old "theory farm" files
 qdrant_storage/
 *.csv
 output/*.json
