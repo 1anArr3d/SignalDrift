@@ -11,6 +11,7 @@ from crawl import reddit_crawler, cleaner
 from crawl.scorer import score_batch
 from draft import script_agent
 from forge import tts, composer
+from slicer.pool_manager import preflight_check, get_next_clip, consume_clip, PoolEmptyError
 
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
@@ -125,6 +126,9 @@ def run_forge(draft: dict, config: dict) -> str:
     audio_path = str(Path(f"output/rendered/{post_id}_{timestamp}.mp3"))
     video_path = str(Path(f"output/rendered/{post_id}_{timestamp}.mp4"))
 
+    # Get next background clip from rotation pool
+    bg_path = get_next_clip()
+
     try:
         tts_result = tts.run(draft["script"], audio_path, config)
     except Exception as e:
@@ -141,8 +145,12 @@ def run_forge(draft: dict, config: dict) -> str:
         output_path=video_path,
         config=config,
         post_info=post_info,
-        word_timings=tts_result["word_timings"]
+        word_timings=tts_result["word_timings"],
+        bg_path=bg_path
     )
+
+    # Consume the clip after successful render
+    consume_clip(bg_path)
 
     _mark_seen(post_id)
 
@@ -163,6 +171,12 @@ def run_forge(draft: dict, config: dict) -> str:
 # Orchestration
 # ---------------------------------------------------------------------------
 def run_pipeline(config: dict, count: int = 1) -> None:
+    try:
+        preflight_check()
+    except PoolEmptyError as e:
+        print(e)
+        return
+
     posts = run_crawl(config)
     seen = _load_seen()
 

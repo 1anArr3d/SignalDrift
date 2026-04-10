@@ -1,4 +1,3 @@
-import os
 import random
 import subprocess
 import textwrap
@@ -8,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Constants
 _FONT_FILE = "C:/Windows/Fonts/arial.ttf"
-_ASSETS_DIR = Path(__file__).resolve().parent.parent / "slicer" / "background_pool"
+_MUSIC_DIR = Path(__file__).resolve().parent.parent / "assets" / "music"
 _TEMP_DIR = Path("output/temp")
 
 def _seconds_to_ass_time(seconds: float) -> str:
@@ -66,7 +65,8 @@ def _render_reddit_card(post_info: dict, width: int, height: int, output_path: s
     draw.text((x0 + 250, y0 + 380), "💬 842 Comments", font=f_sub, fill=(129, 131, 132))
     img.save(output_path)
 
-def compose(audio_path: str, output_path: str, config: dict, post_info: dict, word_timings: list) -> str:
+def compose(audio_path: str, output_path: str, config: dict, post_info: dict,
+            word_timings: list, bg_path: str = None) -> str:
     _TEMP_DIR.mkdir(parents=True, exist_ok=True)
     duration = _get_duration(audio_path)
     ass_path, card_path = str(_TEMP_DIR / "temp.ass"), str(_TEMP_DIR / "card.png")
@@ -76,23 +76,37 @@ def compose(audio_path: str, output_path: str, config: dict, post_info: dict, wo
     title_end = word_timings[title_words - 1]['end'] if len(word_timings) >= title_words else 4.0
 
     # 2. Assets
-    _write_ass(word_timings, 1080, 1920, ass_path, start_threshold=title_end) 
+    _write_ass(word_timings, 1080, 1920, ass_path, start_threshold=title_end)
     _render_reddit_card(post_info, 1080, 1920, card_path)
 
-    # 3. Background
-    bg_pool = [str(f) for f in _ASSETS_DIR.glob("*.mp4")]
-    bg = ffmpeg.input(random.choice(bg_pool), stream_loop=-1, t=duration) if bg_pool else ffmpeg.input("color=c=0x0a0a0f:s=1080x1920:r=30", f="lavfi", t=duration)
-    
-    # 4. Filter Chain
+    # 3. Background clip
+    if bg_path:
+        bg = ffmpeg.input(bg_path, stream_loop=-1, t=duration)
+    else:
+        bg = ffmpeg.input("color=c=0x0a0a0f:s=1080x1920:r=30", f="lavfi", t=duration)
+
+    # 4. Filter chain
     video = (
         bg.filter('scale', -2, 1920).filter('crop', 1080, 1920).filter('vignette', angle='0.5')
         .overlay(ffmpeg.input(card_path), enable=f'lte(t,{title_end})')
         .filter('ass', filename=ass_path)
     )
 
-    # 5. Audio & Export (CLEAN: No background music mixing)
+    # 5. Audio — narration + optional ambient music
+    narration = ffmpeg.input(audio_path)
+    music_files = list(_MUSIC_DIR.glob("*.mp3")) + list(_MUSIC_DIR.glob("*.wav"))
+    if music_files:
+        music = ffmpeg.input(str(random.choice(music_files)), stream_loop=-1, t=duration)
+        audio = ffmpeg.filter([narration, music], 'amix', inputs=2, duration='first', weights='1 0.12')
+        print(f"[composer] Music mixed in at 12% volume.")
+    else:
+        audio = narration
+
+    # 6. Export
     try:
-        ffmpeg.output(video, ffmpeg.input(audio_path), output_path, vcodec='libx264', acodec='aac', pix_fmt='yuv420p').overwrite_output().run(capture_stdout=True, capture_stderr=True)
+        ffmpeg.output(video, audio, output_path,
+                      vcodec='libx264', acodec='aac', pix_fmt='yuv420p'
+                      ).overwrite_output().run(capture_stdout=True, capture_stderr=True)
     except ffmpeg.Error as e:
         print(f"FFMPEG ERROR: {e.stderr.decode()}")
     return output_path
