@@ -139,8 +139,11 @@ def run_forge(draft: dict, config: dict) -> str:
         print(f"[main] TTS Error: {e}")
         raise
 
-    # Use first sentence of script as the hook shown in the title card
-    first_sentence = draft["script"].split(".")[0].strip() + "."
+    # Use first two sentences of script as the hook shown in the title card
+    # Use regex to split on sentence-ending periods (not decimals like 5.0)
+    import re
+    sentences = [s.strip() for s in re.split(r'(?<![0-9])\.(?!\d)', draft["script"]) if s.strip()]
+    first_sentence = ". ".join(sentences[:2]) + "."
 
     post_info = {
         "title": draft["title"],
