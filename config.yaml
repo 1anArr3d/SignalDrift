@@ -31,6 +31,7 @@ crawl:
 tts:
   engine: "azure"
   voice: "en-US-EricNeural"
+  voice_female: "en-US-NancyNeural"
   rate: "21%"
   pitch: "+0st"
 

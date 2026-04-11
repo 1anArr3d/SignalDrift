@@ -4,9 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def run(script_text: str, output_path: str, config: dict) -> dict:
+def run(script_text: str, output_path: str, config: dict, narrator_gender: str = "neutral") -> dict:
     tts_cfg = config.get("tts", {})
-    voice = tts_cfg.get("voice", "en-US-SteffanNeural")
+    if narrator_gender == "female":
+        voice = tts_cfg.get("voice_female", "en-US-JennyNeural")
+    else:
+        voice = tts_cfg.get("voice", "en-US-EricNeural")
 
     speech_key = os.environ.get("AZURE_SPEECH_KEY")
     speech_region = os.environ.get("AZURE_SPEECH_REGION")

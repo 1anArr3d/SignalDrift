@@ -106,6 +106,7 @@ def run_draft(post: dict, config: dict) -> dict:
         "subreddit": post["subreddit"],
         "title": post["title"],
         "script": script_result["script"],
+        "narrator_gender": post.get("score", {}).get("narrator_gender", "neutral"),
         "tiktok_tag": f"#sd{post['post_id']}",   # tag for performance tracking
     }
 
@@ -129,15 +130,22 @@ def run_forge(draft: dict, config: dict) -> str:
     # Get next background clip from rotation pool
     bg_path = get_next_clip()
 
+    narrator_gender = draft.get("narrator_gender", "neutral")
+    print(f"[main] Narrator gender: {narrator_gender}")
+
     try:
-        tts_result = tts.run(draft["script"], audio_path, config)
+        tts_result = tts.run(draft["script"], audio_path, config, narrator_gender=narrator_gender)
     except Exception as e:
         print(f"[main] TTS Error: {e}")
         raise
 
+    # Use first sentence of script as the hook shown in the title card
+    first_sentence = draft["script"].split(".")[0].strip() + "."
+
     post_info = {
         "title": draft["title"],
-        "subreddit": draft["subreddit"]
+        "subreddit": draft["subreddit"],
+        "hook": first_sentence,
     }
 
     composer.compose(

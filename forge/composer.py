@@ -60,7 +60,7 @@ def _render_reddit_card(post_info: dict, width: int, height: int, output_path: s
     draw.text((x0 + 40, y0 + 40), subreddit, font=f_sub, fill="white")
     draw.text((x0 + 40 + draw.textlength(subreddit, f_sub) + 15, y0 + 45), "• 12h", font=f_meta, fill=(129, 131, 132))
     
-    wrapped_title = textwrap.fill(post_info.get("title", ""), width=30)
+    wrapped_title = textwrap.fill(post_info.get("hook", post_info.get("title", "")), width=30)
     draw.multiline_text((x0 + 40, y0 + 100), wrapped_title, font=f_title, fill="white", spacing=12)
     draw.text((x0 + 40, y0 + 380), "▲ 14.2k ▼", font=f_sub, fill=(129, 131, 132))
     draw.text((x0 + 250, y0 + 380), "💬 842 Comments", font=f_sub, fill=(129, 131, 132))
@@ -72,9 +72,10 @@ def compose(audio_path: str, output_path: str, config: dict, post_info: dict,
     duration = _get_duration(audio_path)
     ass_path, card_path = str(_TEMP_DIR / "temp.ass"), str(_TEMP_DIR / "card.png")
 
-    # 1. Timing
-    title_words = len(post_info.get("title", "").split())
-    title_end = word_timings[title_words - 1]['end'] if len(word_timings) >= title_words else 4.0
+    # 1. Timing — use hook word count to determine when card disappears
+    hook_text = post_info.get("hook", post_info.get("title", ""))
+    hook_words = len(hook_text.split())
+    title_end = word_timings[hook_words - 1]['end'] if len(word_timings) >= hook_words else 4.0
 
     # 2. Assets
     _write_ass(word_timings, 1080, 1920, ass_path, start_threshold=title_end)

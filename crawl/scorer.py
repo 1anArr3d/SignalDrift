@@ -43,6 +43,8 @@ Score each criterion 1–10:
 - condensability: can the core be told in 150–250 words without losing tension
 - emotional_hook: dread, shock, disbelief on first read
 
+Also assess narrator_gender: based on the story's perspective and content, would this be most naturally narrated by a "male", "female", or "neutral" voice?
+
 Return only this JSON:
 {{
   "first_person_fit": <int>,
@@ -51,7 +53,8 @@ Return only this JSON:
   "emotional_hook": <int>,
   "overall": <float, average of the four>,
   "verdict": "pass" or "fail",
-  "reason": "<one sentence>"
+  "reason": "<one sentence>",
+  "narrator_gender": "male" or "female" or "neutral"
 }}
 
 verdict is "pass" if overall >= 7.5, otherwise "fail"."""
