@@ -69,9 +69,9 @@ def _remove_from_classified(post_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Stage: crawl
 # ---------------------------------------------------------------------------
-def run_crawl(config: dict) -> list[dict]:
+def run_crawl(config: dict, all_subs: bool = False) -> list[dict]:
     print("\n=== STAGE: crawl ===")
-    raw_posts = reddit_crawler.run(config)
+    raw_posts = reddit_crawler.run(config, all_subs=all_subs)
     cleaned_posts = cleaner.run(raw_posts)
 
     # Score — only passed posts enter the queue
@@ -152,6 +152,9 @@ def run_forge(draft: dict, config: dict) -> str:
     # Consume the clip after successful render
     consume_clip(bg_path)
 
+    # Remove intermediate audio file
+    Path(audio_path).unlink(missing_ok=True)
+
     _mark_seen(post_id)
 
     # Sunset the used post — move out of classified, preserve in archive
@@ -198,13 +201,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", choices=["crawl", "forge"])
     parser.add_argument("--count", type=int, default=1)
+    parser.add_argument("--all", action="store_true", help="Crawl all subreddits at once")
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
 
     config = load_config(args.config)
 
     if args.stage == "crawl":
-        run_crawl(config)
+        run_crawl(config, all_subs=args.all)
 
     elif args.stage == "forge":
         # Draft then forge the top N scored posts from classified

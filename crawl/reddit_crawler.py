@@ -34,24 +34,42 @@ def _save_crawl_state(state: dict):
 
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
 
-def _fetch_sort(sub: str, sort: str, limit: int = 25) -> list:
-    """Fetch posts from a subreddit by sort (top?t=week or hot)."""
-    if sort == "top":
-        url = f"https://www.reddit.com/r/{sub}/top.json?limit={limit}&t=week"
-    else:
-        url = f"https://www.reddit.com/r/{sub}/hot.json?limit={limit}"
+def _fetch_sort(sub: str, sort: str) -> list:
+    """Fetch posts from a subreddit by sort. Paginates through all results for top/year."""
+    all_children = []
+    after = None
 
-    try:
-        resp = requests.get(url, headers=_HEADERS, timeout=10)
-        if resp.status_code == 429:
-            print(f"[crawl] Rate limited on r/{sub}/{sort}. Sleeping 30s...")
-            time.sleep(30)
-            return []
-        resp.raise_for_status()
-        return resp.json().get("data", {}).get("children", [])
-    except Exception as e:
-        print(f"[crawl] Failed r/{sub}/{sort}: {e}")
-        return []
+    while True:
+        if sort == "top":
+            url = f"https://www.reddit.com/r/{sub}/top.json?limit=100&t=year"
+        else:
+            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=100"
+
+        if after:
+            url += f"&after={after}"
+
+        try:
+            resp = requests.get(url, headers=_HEADERS, timeout=10)
+            if resp.status_code == 429:
+                print(f"[crawl] Rate limited on r/{sub}/{sort}. Sleeping 30s...")
+                time.sleep(30)
+                continue
+            resp.raise_for_status()
+            data = resp.json().get("data", {})
+            children = data.get("children", [])
+            all_children.extend(children)
+            after = data.get("after")
+        except Exception as e:
+            print(f"[crawl] Failed r/{sub}/{sort}: {e}")
+            break
+
+        # Stop if no more pages or not paginating hot
+        if not after or sort != "top":
+            break
+
+        time.sleep(1)
+
+    return all_children
 
 
 def _filter_post(p: dict, min_score: int, min_ratio: float,
@@ -116,25 +134,27 @@ def _scrape_sub(sub_cfg: dict, crawl_cfg: dict, seen: set) -> list:
 
 # ── Main entry ────────────────────────────────────────────────────────────────
 
-def fetch_posts(config: dict) -> list:
+def fetch_posts(config: dict, all_subs: bool = False) -> list:
     crawl_cfg = config["crawl"]
-    all_subs = config["farm"]["subreddits"]
+    sub_list = config["farm"]["subreddits"]
 
-    primaries = [s for s in all_subs if s.get("tier") == "primary"]
-    secondaries = [s for s in all_subs if s.get("tier") == "secondary"]
+    primaries = [s for s in sub_list if s.get("tier") == "primary"]
+    secondaries = [s for s in sub_list if s.get("tier") == "secondary"]
 
     seen = _load_seen()
     state = _load_crawl_state(secondaries)
 
-    subs_to_crawl = list(primaries)
-
-    # Rotate in one secondary per crawl
-    if secondaries:
-        idx = state.get("secondary_index", 0) % len(secondaries)
-        subs_to_crawl.append(secondaries[idx])
-        print(f"[crawl] Secondary this run: r/{secondaries[idx]['name']} ({idx + 1}/{len(secondaries)})")
-        state["secondary_index"] = (idx + 1) % len(secondaries)
-        _save_crawl_state(state)
+    if all_subs:
+        subs_to_crawl = primaries + secondaries
+        print(f"[crawl] Mode: ALL ({len(subs_to_crawl)} subreddits)")
+    else:
+        subs_to_crawl = list(primaries)
+        if secondaries:
+            idx = state.get("secondary_index", 0) % len(secondaries)
+            subs_to_crawl.append(secondaries[idx])
+            print(f"[crawl] Secondary this run: r/{secondaries[idx]['name']} ({idx + 1}/{len(secondaries)})")
+            state["secondary_index"] = (idx + 1) % len(secondaries)
+            _save_crawl_state(state)
 
     results = []
     for sub_cfg in subs_to_crawl:
@@ -145,5 +165,5 @@ def fetch_posts(config: dict) -> list:
     return results
 
 
-def run(config: dict) -> list:
-    return fetch_posts(config)
+def run(config: dict, all_subs: bool = False) -> list:
+    return fetch_posts(config, all_subs=all_subs)

@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _CLIENT = None
-PASS_THRESHOLD = 6.5
+PASS_THRESHOLD = 7.5
 MODEL = "claude-haiku-4-5-20251001"
 
 SYSTEM_PROMPT = """\
@@ -54,7 +54,7 @@ Return only this JSON:
   "reason": "<one sentence>"
 }}
 
-verdict is "pass" if overall >= 6.5, otherwise "fail"."""
+verdict is "pass" if overall >= 7.5, otherwise "fail"."""
 
 
 def _get_client() -> anthropic.Anthropic:
