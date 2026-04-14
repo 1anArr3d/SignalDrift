@@ -11,7 +11,7 @@ from crawl import reddit_crawler, cleaner
 from crawl.scorer import score_batch
 from draft import script_agent
 from forge import tts, composer
-from slicer.pool_manager import preflight_check, get_next_clip, consume_clip, PoolEmptyError
+from slicer.pool_manager import get_random_clip, consume_clip, PoolEmptyError
 
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
@@ -69,17 +69,35 @@ def _remove_from_classified(post_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Stage: crawl
 # ---------------------------------------------------------------------------
+def _load_all_seen_ids() -> set:
+    ids = _load_seen()
+    if Path(_SUNSET).exists():
+        sunset = _load_json(_SUNSET)
+        ids.update(p["post_id"] for p in sunset if "post_id" in p)
+    if Path(_CLASSIFIED).exists():
+        classified = _load_json(_CLASSIFIED)
+        ids.update(p["post_id"] for p in classified if "post_id" in p)
+    return ids
+
 def run_crawl(config: dict, all_subs: bool = False) -> list[dict]:
     print("\n=== STAGE: crawl ===")
     raw_posts = reddit_crawler.run(config, all_subs=all_subs)
     cleaned_posts = cleaner.run(raw_posts)
 
+    # Skip posts we've already seen or scored before
+    seen_ids = _load_all_seen_ids()
+    fresh_posts = [p for p in cleaned_posts if p["post_id"] not in seen_ids]
+    skipped = len(cleaned_posts) - len(fresh_posts)
+    if skipped:
+        print(f"[main] Skipped {skipped} already-seen posts.")
+
     # Score — only passed posts enter the queue
-    passed, failed = score_batch(cleaned_posts)
+    passed, failed = score_batch(fresh_posts, config=config)
 
     # Sunset rejected posts immediately — data preserved, not lost
     if failed:
-        _sunset_posts(failed)
+        failed_slim = [{k: v for k, v in p.items() if k != "body"} for p in failed]
+        _sunset_posts(failed_slim)
         print(f"[main] {len(failed)} posts failed scoring → sunset_posts.json")
 
     _save_json(passed, _CLASSIFIED)
@@ -105,7 +123,9 @@ def run_draft(post: dict, config: dict) -> dict:
         "post_id": post["post_id"],
         "subreddit": post["subreddit"],
         "title": post["title"],
+        "body": post.get("body", ""),
         "script": script_result["script"],
+        "card_title": script_result.get("card_title", ""),
         "narrator_gender": post.get("score", {}).get("narrator_gender", "neutral"),
         "tiktok_tag": f"#sd{post['post_id']}",   # tag for performance tracking
     }
@@ -127,28 +147,29 @@ def run_forge(draft: dict, config: dict) -> str:
     audio_path = str(Path(f"output/rendered/{post_id}.mp3"))
     video_path = str(Path(f"output/rendered/{post_id}.mp4"))
 
-    # Get next background clip from rotation pool
-    bg_path = get_next_clip()
+    bg_path = get_random_clip()
 
     narrator_gender = draft.get("narrator_gender", "neutral")
     print(f"[main] Narrator gender: {narrator_gender}")
 
+    # card_title is spoken first, then the script body follows
+    card_title = draft.get("card_title") or draft["title"]
+    full_tts_text = card_title + " " + draft["script"]
+
     try:
-        tts_result = tts.run(draft["script"], audio_path, config, narrator_gender=narrator_gender)
+        tts_result = tts.run(full_tts_text, audio_path, config, narrator_gender=narrator_gender)
     except Exception as e:
         print(f"[main] TTS Error: {e}")
         raise
 
-    # Use first two sentences of script as the hook shown in the title card
-    # Use regex to split on sentence-ending periods (not decimals like 5.0)
-    import re
-    sentences = [s.strip() for s in re.split(r'(?<![0-9])\.(?!\d)', draft["script"]) if s.strip()]
-    first_sentence = ". ".join(sentences[:2]) + "."
+    # Card disappears after card_title words finish speaking
+    card_word_count = len(card_title.split())
 
     post_info = {
         "title": draft["title"],
         "subreddit": draft["subreddit"],
-        "hook": first_sentence,
+        "hook": card_title,           # word count used for timing
+        "hook_display": card_title,   # text shown on card
     }
 
     composer.compose(
@@ -160,7 +181,6 @@ def run_forge(draft: dict, config: dict) -> str:
         bg_path=bg_path
     )
 
-    # Consume the clip after successful render
     consume_clip(bg_path)
 
     # Remove intermediate audio file
@@ -172,7 +192,7 @@ def run_forge(draft: dict, config: dict) -> str:
     _remove_from_classified(post_id)
     _sunset_posts(
         [{"post_id": post_id, "title": draft["title"], "subreddit": draft["subreddit"],
-          "tiktok_tag": draft.get("tiktok_tag", "")}],
+          "tiktok_tag": draft.get("tiktok_tag", ""), "body": draft.get("body", "")}],
         used_at=datetime.now().isoformat(),
         video_path=video_path
     )
@@ -185,12 +205,6 @@ def run_forge(draft: dict, config: dict) -> str:
 # Orchestration
 # ---------------------------------------------------------------------------
 def run_pipeline(config: dict, count: int = 1) -> None:
-    try:
-        preflight_check()
-    except PoolEmptyError as e:
-        print(e)
-        return
-
     posts = run_crawl(config)
     seen = _load_seen()
 
@@ -214,9 +228,43 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--all", action="store_true", help="Crawl all subreddits at once")
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--post-id", help="Reforge a specific post by ID using its existing queue JSON")
+    parser.add_argument("--draft-only", action="store_true", help="Run draft stage only, skip forge")
     args = parser.parse_args()
 
     config = load_config(args.config)
+
+    if args.post_id:
+        queue_path = Path(f"output/queue/{args.post_id}.json")
+        if queue_path.exists():
+            if args.draft_only:
+                print(f"[main] Queue JSON already exists for {args.post_id}. Delete it first to redraft.")
+                return
+            draft = _load_json(str(queue_path))
+            run_forge(draft, config)
+            return
+
+        # Search classified
+        match = None
+        if Path(_CLASSIFIED).exists():
+            match = next((p for p in _load_json(_CLASSIFIED) if p["post_id"] == args.post_id), None)
+
+        # Fall back to sunset
+        if not match and Path(_SUNSET).exists():
+            match = next((p for p in _load_json(_SUNSET) if p["post_id"] == args.post_id), None)
+            if match:
+                print(f"[main] Found {args.post_id} in sunset — redrafting.")
+
+        if not match:
+            print(f"[main] {args.post_id} not found in queue, classified, or sunset.")
+            return
+
+        draft = run_draft(match, config)
+        if not args.draft_only:
+            run_forge(draft, config)
+        else:
+            print(f"[main] Draft saved to output/queue/{args.post_id}.json — inspect before forging.")
+        return
 
     if args.stage == "crawl":
         run_crawl(config, all_subs=args.all)

@@ -1,17 +1,8 @@
 """
 scorer.py
 
-Scores incoming Reddit posts on their potential as a first-person TikTok script.
-Uses Claude Haiku for cost efficiency — runs on every crawled post before it
-enters classified_posts.json.
-
-Scoring criteria (each 1–10):
-  - first_person_fit  : how naturally it reads as "I" narration
-  - story_payoff      : strength of the ending moment / final image
-  - condensability    : can the core be told in 150–250 words
-  - emotional_hook    : dread, shock, disbelief — does it make you feel something
-
-Pass threshold: overall >= 6.5
+Lightweight hybrid scorer. Rule-based pre-filter first (free), then a single
+Claude call only for posts that pass rules. One sentence verdict, no rubric.
 """
 
 import json
@@ -22,106 +13,98 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _CLIENT = None
-PASS_THRESHOLD = 7.5
 MODEL = "claude-haiku-4-5-20251001"
+SKIP_KEYWORDS = ["update", "part 2", "mod post", "announcement", "repost"]
 
 SYSTEM_PROMPT = """\
-You are a content evaluator for a horror storytelling TikTok channel.
-Your job is to score Reddit posts on their potential as a short first-person narrated script (150–250 words).
-Be critical. Most posts should not pass. Only score high if the story is genuinely compelling and tightly structured.
-Always return valid JSON only. No markdown, no explanation outside the JSON."""
+You are a TikTok content filter. Decide if a Reddit post makes a good short drama script.
+Return JSON only. No explanation outside the JSON."""
 
-USER_PROMPT_TEMPLATE = """\
-Score this Reddit post on its potential as a first-person TikTok horror script.
-
+USER_PROMPT = """\
 Title: {title}
 Body: {body}
 
-Score each criterion 1–10:
-- first_person_fit: how naturally it becomes "I" narration
-- story_payoff: strength of the final moment or reveal
-- condensability: can the core be told in 150–250 words without losing tension
-- emotional_hook: dread, shock, disbelief on first read
-
-Also assess narrator_gender: based on the story's perspective and content, would this be most naturally narrated by a "male", "female", or "neutral" voice?
-
-Return only this JSON:
-{{
-  "first_person_fit": <int>,
-  "story_payoff": <int>,
-  "condensability": <int>,
-  "emotional_hook": <int>,
-  "overall": <float, average of the four>,
-  "verdict": "pass" or "fail",
-  "reason": "<one sentence>",
-  "narrator_gender": "male" or "female" or "neutral"
-}}
-
-verdict is "pass" if overall >= 7.5, otherwise "fail"."""
+Does this make a good 200-word TikTok drama script? Is the conflict clear and the other person clearly in the wrong?
+Return: {{"verdict": "pass" or "fail", "narrator_gender": "male" or "female" or "neutral"}}"""
 
 
-def _get_client() -> anthropic.Anthropic:
+def _get_client():
     global _CLIENT
     if _CLIENT is None:
         _CLIENT = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
     return _CLIENT
 
 
-def score_post(post: dict) -> dict:
-    """
-    Score a single post. Returns the post dict with a 'score' key added.
-    Posts that fail get score['verdict'] == 'fail' and are excluded from the queue.
-    """
-    title = post.get("title", "")
-    # Truncate body to 1500 chars — Haiku doesn't need the full text to judge quality
-    body = post.get("body", "")[:1500]
+def _narrator_gender_fallback(post: dict) -> str:
+    text = (post.get("title", "") + " " + post.get("body", "")).lower()
+    f = text.count("(f)") + text.count("(f,") + text.count(" her ") + text.count(" she ")
+    m = text.count("(m)") + text.count("(m,") + text.count(" his ") + text.count(" he ")
+    if f > m: return "female"
+    if m > f: return "male"
+    return "female"
 
-    prompt = USER_PROMPT_TEMPLATE.format(title=title, body=body)
 
+def score_post(post: dict, config: dict = None) -> dict:
+    title = post.get("title", "").lower()
+    body = post.get("body", "")
+    reddit_score = post.get("score", 0)
+    upvote_ratio = post.get("upvote_ratio", 0)
+
+    sub_name = post.get("subreddit", "")
+    min_score = 200
+    if config:
+        for s in config.get("farm", {}).get("subreddits", []):
+            if s["name"].lower() == sub_name.lower():
+                min_score = s.get("min_score", 200)
+                break
+
+    # ── Rule pre-filter (free) ────────────────────────────────────────────────
+    fail_reason = None
+    if reddit_score < min_score:
+        fail_reason = f"score {reddit_score} < {min_score}"
+    elif upvote_ratio < 0.8:
+        fail_reason = f"ratio {upvote_ratio:.2f} < 0.80"
+    elif len(body) < 300:
+        fail_reason = "body too short"
+    elif any(kw in title for kw in SKIP_KEYWORDS):
+        fail_reason = "skip keyword"
+
+    if fail_reason:
+        post["score"] = {"verdict": "fail", "overall": 4.0, "reason": fail_reason,
+                         "narrator_gender": _narrator_gender_fallback(post)}
+        print(f"  [scorer] FAIL (rules) — {post['title'][:60]}")
+        return post
+
+    # ── Claude micro-call (only for rule-passers) ─────────────────────────────
     try:
         client = _get_client()
-        message = client.messages.create(
-            model=MODEL,
-            max_tokens=256,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}]
+        r = client.messages.create(
+            model=MODEL, max_tokens=60, system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": USER_PROMPT.format(
+                title=post.get("title", ""), body=body[:800]
+            )}]
         )
-        raw = message.content[0].text.strip()
-        # Strip markdown code fences if model wraps response
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-        if not raw:
-            raise ValueError(f"Empty response from model. Full content: {message.content}")
-        result = json.loads(raw)
-    except Exception as e:
-        print(f"  [scorer] Error on '{title[:50]}': {e}")
-        # On failure, let the post through with a neutral score rather than blocking the pipeline
-        result = {
-            "first_person_fit": 5, "story_payoff": 5,
-            "condensability": 5, "emotional_hook": 5,
-            "overall": 5.0, "verdict": "fail",
-            "reason": "Scorer error — skipped."
-        }
+        raw = r.content[0].text.strip()
+        s, e = raw.find('{'), raw.rfind('}') + 1
+        result = json.loads(raw[s:e])
+        verdict = result.get("verdict", "fail")
+        narrator_gender = result.get("narrator_gender", "female")
+    except Exception as ex:
+        print(f"  [scorer] Claude error: {ex} — letting through")
+        verdict = "pass"
+        narrator_gender = _narrator_gender_fallback(post)
 
-    post["score"] = result
-    verdict = result.get("verdict", "fail")
-    overall = result.get("overall", 0)
-    print(f"  [scorer] {verdict.upper()} ({overall:.1f}) — {post['title'][:60]}")
+    post["score"] = {"verdict": verdict, "overall": 8.0 if verdict == "pass" else 4.0,
+                     "narrator_gender": narrator_gender}
+    print(f"  [scorer] {verdict.upper()} — {post['title'][:60]}")
     return post
 
 
-def score_batch(posts: list) -> tuple[list, list]:
-    """
-    Score a list of posts. Returns (passed, failed) as two separate lists.
-    Both lists contain the full post dicts with 'score' attached.
-    """
+def score_batch(posts: list, config: dict = None) -> tuple[list, list]:
     passed, failed = [], []
     print(f"[scorer] Scoring {len(posts)} posts...")
     for post in posts:
-        scored = score_post(post)
+        scored = score_post(post, config=config)
         if scored["score"].get("verdict") == "pass":
             passed.append(scored)
         else:

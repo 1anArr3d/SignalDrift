@@ -1,22 +1,22 @@
 # Global settings
 brand:
   name: "FirstPerson"
-  niche: "storytelling"
+  niche: "drama"
 
 # Reddit Crawler Settings (REQUIRED for your crawler)
 farm:
   subreddits:
-    - name: "nosleep"
-      min_score: 300
+    - name: "AITAH"
+      min_score: 500
       tier: "primary"
-    - name: "shortscarystories"
-      min_score: 150
+    - name: "AmItheAsshole"
+      min_score: 500
+      tier: "primary"
+    - name: "relationship_advice"
+      min_score: 300
       tier: "secondary"
-    - name: "paranormal"
-      min_score: 100
-      tier: "secondary"
-    - name: "glitch_in_the_matrix"
-      min_score: 100
+    - name: "TrueOffMyChest"
+      min_score: 200
       tier: "secondary"
 
 crawl:
@@ -30,9 +30,9 @@ crawl:
 # TTS Settings
 tts:
   engine: "azure"
-  voice: "en-US-EricNeural"
-  voice_female: "en-US-NancyNeural"
-  rate: "21%"
+  voice: "en-US-NancyNeural"
+  voice_male: "en-US-EricNeural"
+  rate: "28%"
   pitch: "+0st"
 
 # Video Assembly Settings

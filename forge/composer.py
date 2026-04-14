@@ -17,20 +17,18 @@ def _seconds_to_ass_time(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 def _write_ass(word_timings: list[dict], width: int, height: int, path: str, start_threshold: float):
-    # Leaner font scaling (width//10) to prevent edge-clipping
     header = (
         f"[Script Info]\nPlayResX: {width}\nPlayResY: {height}\n\n"
         f"[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, Outline, Alignment\n"
-        f"Style: Default,Bahnschrift,{width//10},&H00FFFFFF,6,5\n\n"
+        f"Style: Default,Bahnschrift,{width//7},&H00FFFFFF,4,5\n\n"
         f"[Events]\nFormat: Layer, Start, End, Style, Text\n"
     )
-    
+
     words = [w for w in word_timings if w['start'] >= start_threshold]
     events = []
-    
+
     for i, curr in enumerate(words):
         start = _seconds_to_ass_time(curr['start'])
-        # Hold the word until the next one starts
         end_val = words[i+1]['start'] if i < len(words) - 1 else curr['end'] + 1.0
         end = _seconds_to_ass_time(end_val)
         text = curr['word'].upper().strip().replace('"', '')
@@ -43,27 +41,49 @@ def _get_duration(path: str) -> float:
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]
     return float(subprocess.check_output(cmd).decode().strip())
 
-def _render_reddit_card(post_info: dict, width: int, height: int, output_path: str):
+def _render_hook_card(post_info: dict, width: int, height: int, output_path: str, label: str = "[ STORY ]"):
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    card_w, card_h = int(width * 0.9), 450
-    x0, y0 = (width - card_w) // 2, int(height * 0.35)
-    
-    draw.rounded_rectangle([x0, y0, x0 + card_w, y0 + card_h], radius=20, fill=(26, 26, 27, 255))
-    
-    try:
-        f_sub, f_title, f_meta = ImageFont.truetype(_FONT_FILE, 30), ImageFont.truetype(_FONT_FILE, 45), ImageFont.truetype(_FONT_FILE, 25)
-    except:
-        f_sub = f_title = f_meta = ImageFont.load_default()
 
-    subreddit = f"r/{post_info.get('subreddit', 'nosleep')}"
-    draw.text((x0 + 40, y0 + 40), subreddit, font=f_sub, fill="white")
-    draw.text((x0 + 40 + draw.textlength(subreddit, f_sub) + 15, y0 + 45), "• 12h", font=f_meta, fill=(129, 131, 132))
-    
-    wrapped_title = textwrap.fill(post_info.get("hook", post_info.get("title", "")), width=30)
-    draw.multiline_text((x0 + 40, y0 + 100), wrapped_title, font=f_title, fill="white", spacing=12)
-    draw.text((x0 + 40, y0 + 380), "▲ 14.2k ▼", font=f_sub, fill=(129, 131, 132))
-    draw.text((x0 + 250, y0 + 380), "💬 842 Comments", font=f_sub, fill=(129, 131, 132))
+    hook_text = post_info.get("hook", post_info.get("title", ""))
+    wrapped = textwrap.fill(hook_text, width=20)
+    lines = wrapped.split("\n")
+
+    try:
+        font       = ImageFont.truetype("C:/Windows/Fonts/cour.ttf", 72)
+        font_label = ImageFont.truetype("C:/Windows/Fonts/cour.ttf", 32)
+    except:
+        font = font_label = ImageFont.load_default()
+
+    line_h  = 90
+    block_h = len(lines) * line_h
+    y_start = (height - block_h) // 2 - 60
+
+    pad_x, pad_y = 60, 60
+    box_x0 = 60
+    box_x1 = width - 60
+    box_y0 = y_start - pad_y - 60
+    box_y1 = y_start + block_h + pad_y
+
+    # White card
+    draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=(255, 255, 255, 230))
+
+    # Dark border
+    draw.rectangle([box_x0, box_y0, box_x1, box_y1], outline=(20, 20, 20, 255), width=3)
+
+    label_w = draw.textlength(label, font_label)
+    draw.text(((width - label_w) // 2, box_y0 + 14), label, font=font_label, fill=(20, 20, 20, 255))
+
+    # Dark line under label
+    draw.rectangle([box_x0 + 30, box_y0 + 54, box_x1 - 30, box_y0 + 57], fill=(20, 20, 20, 180))
+
+    # Dark text
+    for i, line in enumerate(lines):
+        line_w = draw.textlength(line, font)
+        x = (width - line_w) // 2
+        y = y_start + i * line_h
+        draw.text((x, y), line, font=font, fill=(20, 20, 20, 255))
+
     img.save(output_path)
 
 def compose(audio_path: str, output_path: str, config: dict, post_info: dict,
@@ -72,14 +92,18 @@ def compose(audio_path: str, output_path: str, config: dict, post_info: dict,
     duration = _get_duration(audio_path)
     ass_path, card_path = str(_TEMP_DIR / "temp.ass"), str(_TEMP_DIR / "card.png")
 
-    # 1. Timing — use hook word count to determine when card disappears
+    # 1. Timing — card disappears after both hook sentences finish (full hook_timing_text)
     hook_text = post_info.get("hook", post_info.get("title", ""))
     hook_words = len(hook_text.split())
     title_end = word_timings[hook_words - 1]['end'] if len(word_timings) >= hook_words else 4.0
 
-    # 2. Assets
+    # 2. Assets — card displays only first sentence so viewers can't read ahead
+    niche = config.get("brand", {}).get("niche", "storytelling")
+    card_label = "[ AITA ]" if niche == "drama" else "[ STORY ]"
+    display_post_info = {**post_info, "hook": post_info.get("hook_display", hook_text)}
+
     _write_ass(word_timings, 1080, 1920, ass_path, start_threshold=title_end)
-    _render_reddit_card(post_info, 1080, 1920, card_path)
+    _render_hook_card(display_post_info, 1080, 1920, card_path, label=card_label)
 
     # 3. Background clip
     if bg_path:
@@ -99,7 +123,7 @@ def compose(audio_path: str, output_path: str, config: dict, post_info: dict,
     music_files = list(_MUSIC_DIR.glob("*.mp3")) + list(_MUSIC_DIR.glob("*.wav"))
     if music_files:
         music = ffmpeg.input(str(random.choice(music_files)), stream_loop=-1, t=duration)
-        audio = ffmpeg.filter([narration, music], 'amix', inputs=2, duration='first', weights='1 0.12')
+        audio = ffmpeg.filter([narration, music], 'amix', inputs=2, duration='first', weights='1 0.08')
         print(f"[composer] Music mixed in at 12% volume.")
     else:
         audio = narration

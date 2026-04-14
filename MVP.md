@@ -1,6 +1,6 @@
 # SignalDrift — MVP Reference
 
-Automated pipeline that crawls Reddit horror stories, generates narrated scripts, synthesizes TTS audio with word-level timing, and renders captioned 1080x1920 MP4s for TikTok.
+Automated pipeline that crawls Reddit AITA/drama posts, generates first-person narrated scripts, synthesizes TTS audio with word-level timing, and renders captioned 1080x1920 MP4s for TikTok/Shorts.
 
 ---
 
@@ -12,10 +12,10 @@ crawl → score → draft → forge → post
 
 | Stage | Entry point | What it does |
 |-------|-------------|--------------|
-| crawl | `crawl/reddit_crawler.py` | Pulls top+hot from Reddit, rotates secondaries, deduplicates |
-| score | `crawl/scorer.py` | Haiku scores each post; failures go to sunset archive |
-| draft | `draft/script_agent.py` | Claude Sonnet condenses post into 150–250 word first-person script |
-| forge | `forge/tts.py` + `forge/composer.py` | Azure TTS with word timing → captioned MP4 with background clip + ambient music |
+| crawl | `crawl/reddit_crawler.py` | Pulls top+hot from AITAH/AmItheAsshole/relationship_advice, deduplicates |
+| score | `crawl/scorer.py` | Rule pre-filter (score, ratio, length) then single Claude micro-call; failures go to sunset archive |
+| draft | `draft/script_agent.py` | Claude Sonnet writes 240–260 word first-person drama script + card_title |
+| forge | `forge/tts.py` + `forge/composer.py` | Azure TTS (NancyNeural) with SSML breaks → captioned MP4 with background clip + ambient music |
 
 ---
 
@@ -34,6 +34,9 @@ python main.py --stage crawl
 # Forge only from existing queue
 python main.py --stage forge --count 3
 
+# Draft only — inspect before forging
+python main.py --post-id <post_id> --draft-only
+
 # Forge a specific post by ID
 python main.py --post-id <post_id>
 ```
@@ -42,23 +45,21 @@ python main.py --post-id <post_id>
 
 ## Slicer
 
-Processes raw gameplay footage into a rotation pool of 3-minute background clips.
+Processes raw footage into a pool of 90-second background clips.
 
 ```bash
 # Drop .mp4 files into slicer/input/ then run:
 python slicer/silcer_mvp.py
-
-# Check pool rotation status
-python slicer/pool_manager.py
 ```
 
 **How it works:**
-1. Samples footage at 1fps, computes per-second motion scores via PIL frame differencing
-2. Each video uses its own adaptive threshold (30th percentile of its own scores)
-3. Low-motion segments (menus, cutscenes, loading) are dropped
-4. Remaining segments sliced into 180s chunks → `slicer/background_pool/<game>/`
+1. Reads duration of each input file
+2. Cuts into 90-second chunks — no motion analysis, no pixel sampling
+3. Chunks saved to `slicer/background_pool/`
 
-**Pool rotation:** Each video render consumes the next clip in rotation across all game folders. If any game pool hits 0 the run stops.
+**Pool rotation:** Each forge picks a random clip and deletes it after use. Raises `PoolEmptyError` when pool is empty — re-run the slicer to refill.
+
+**Background content:** Use royalty-free or low-enforcement footage (satisfying/oddly satisfying compilations, ambient b-roll). Avoid anything owned by large media companies (e.g. TheSoul Publishing / Five Minute Crafts) — Content ID will flag it on YouTube Shorts over 60s.
 
 ---
 
@@ -67,28 +68,28 @@ python slicer/pool_manager.py
 `config.yaml` controls all tunable parameters:
 
 ```yaml
+brand:
+  name: "FirstPerson"
+  niche: "drama"
+
 farm:
   subreddits:
-    - name: "nosleep"
+    - name: "AITAH"
+      min_score: 500
+      tier: "primary"
+    - name: "AmItheAsshole"
+      min_score: 500
+      tier: "primary"
+    - name: "relationship_advice"
       min_score: 300
-      tier: "primary"        # crawled every run
-    - name: "paranormal"
-      min_score: 100
-      tier: "secondary"      # rotates in one per crawl
-
-crawl:
-  min_upvote_ratio: 0.8
-  skip_title_keywords: [Update, Part, Announcement, Mod Post]
+      tier: "secondary"
 
 tts:
   engine: "azure"
-  voice: "en-US-EricNeural"
-  rate: "21%"
+  voice: "en-US-NancyNeural"       # female (default)
+  voice_male: "en-US-EricNeural"   # routed by narrator_gender from scorer
+  rate: "28%"
   pitch: "+0st"
-
-video:
-  resolution: "1080x1920"
-  fps: 30
 ```
 
 ---
@@ -101,8 +102,6 @@ video:
 | `output/queue/<post_id>.json` | Drafted scripts ready to forge |
 | `output/seen_posts.json` | All processed post IDs (dedup) |
 | `output/sunset_posts.json` | Archive of every post — scored, rejected, and used |
-| `output/crawl_state.json` | Secondary subreddit rotation index |
-| `slicer/pool_state.json` | Background clip rotation index |
 
 ---
 
@@ -110,9 +109,21 @@ video:
 
 | Path | Contents |
 |------|----------|
-| `assets/music/` | Ambient music loops mixed under narration at 12% volume |
-| `slicer/input/` | Drop raw gameplay footage here before slicing |
-| `slicer/background_pool/` | Processed clips organized by game |
+| `assets/music/` | Ambient music loops mixed under narration at 8% volume |
+| `slicer/input/` | Drop raw footage here before slicing |
+| `slicer/background_pool/` | Processed 90s clips ready for forge |
+
+---
+
+## Video Structure
+
+Each rendered video follows this structure:
+
+1. **Card** — white card with `[ AITA ]` label, displays the `card_title` question
+2. **Narration reads card_title aloud** — card stays up until it finishes
+3. **Card drops** — word-by-word captions take over
+4. **Story body** — 240–260 words, first-person drama
+5. **CTA** — `"What do you think?"` with emphasis break at the end
 
 ---
 
@@ -120,7 +131,7 @@ video:
 
 Every rendered video includes a `tiktok_tag` (`#sd<post_id>`) printed at forge time.
 
-Add this tag to the TikTok description. When you pull analytics later, join on the tag to link views/saves/watch time back to the source Reddit post in `sunset_posts.json`.
+Add this tag to the TikTok description. When you pull analytics later, join on the tag to link views/saves/watch time back to the source post in `sunset_posts.json`.
 
 ---
 
@@ -130,6 +141,9 @@ Add this tag to the TikTok description. When you pull analytics later, join on t
 ANTHROPIC_API_KEY=
 AZURE_SPEECH_KEY=
 AZURE_SPEECH_REGION=
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+REDDIT_USER_AGENT=
 ```
 
 ---
@@ -137,21 +151,13 @@ AZURE_SPEECH_REGION=
 ## Roadmap
 
 ### Near-term
-- **`--post-id` + `--stage forge` bug** — `--post-id` currently bypasses `--stage`, always re-drafts. Needs a one-line fix in `main.py`.
-- **Female TTS routing** — scorer already planned to return `narrator_gender`. Route female-narrator stories to a second Azure voice automatically.
-- **Gender field in scorer** — add `narrator_gender: male | female | neutral` to `crawl/scorer.py` JSON output.
+- **Auto-post** — push rendered MP4s to TikTok/Shorts via API on a schedule
+- **Performance tracker** — log every rendered video: word count, narrator gender, posting time → `output/performance_log.json`
 
-### Data & ML
-- **Performance tracker** — log every rendered video: story category, word count, script score, game used, posting time. Store in `output/performance_log.json`.
-- **TikTok metric ingestion** — pull views, saves, watch time and join on `#sd<post_id>` tag to link performance back to source post in `sunset_posts.json`.
-- **Post classifier** — once 50–100 videos have metrics, train a logistic regression on text embeddings to predict high/low performer. Replaces the heuristic Haiku scorer with a data-driven one.
-- **False positive isolation** — log which game clip was used per video so you can separate "bad story" from "bad clip" in the performance data.
+### Data
+- **TikTok metric ingestion** — pull views, saves, watch time and join on `#sd<post_id>` tag
+- **Post classifier** — once 50–100 videos have metrics, replace heuristic scorer with a data-driven one
 
 ### Scale
-- **Synthetic story generation** — feed top-performing scripts as examples to Claude, generate original stories in the same style. Patches the hole when Reddit supply runs thin.
-- **Multi-account / multi-niche** — AITAH and space-theory farms planned. Only prompts + subreddit config swap between farms; pipeline stays identical.
-- **`--count N` batch scheduling** — cron or scheduled trigger to run `python main.py --count 5` daily at 3pm automatically.
-
-### Slicer
-- **Motion threshold tuning per game** — expose `motion_percentile` as a per-subreddit-style config so slow horror games and fast FPS games each use the right floor.
-- **Post-slice cleanup** — optionally delete source file from `slicer/input/` after processing to save disk space.
+- **Multi-account / multi-niche** — only prompts + subreddit config swap between farms; pipeline stays identical
+- **Batch scheduling** — cron to run `python main.py --count 5` daily automatically

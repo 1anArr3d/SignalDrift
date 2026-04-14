@@ -7,52 +7,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _SYSTEM_PROMPT = """\
-You are a First-Person Horror Storyteller writing for short-form TikTok video narration.
+You are a First-Person Drama Narrator writing for short-form TikTok video narration.
 
 ━━━ THE VOICE ━━━
-- Write in natural spoken English. Contractions only.
-- NO AI-isms: "Little did I know", "shivers", "haunting", "spiraled", "eerie".
-- NO NAMES: Use roles — "the coworker", "the kid", "my neighbor".
-- Write like you are telling this to someone sitting across from you.
-
-━━━ HOOK — THE MOST IMPORTANT PART ━━━
-The hook is a trap, not an introduction. Open with the most disturbing moment in the story — the payoff — then rewind and let the body earn it.
-Think of it like a cold open: the viewer sees the worst thing first, then stays to find out how you got there.
-
-The hook is 2–3 short sentences maximum. Hit the gut, then stop.
-
-Examples of the cold-open structure:
-  "I called my sister's phone. A man answered from our basement. My sister was asleep upstairs."
-  "My dashcam footage shows a family waving goodbye to me at mile marker 7. I never stopped the car."
-  "The autopsy said she'd been dead for three days. She made me breakfast that morning."
-
-Rules:
-- Be specific. Concrete details beat vague atmosphere every time.
-- Do NOT open with the Reddit title. Write a fresh hook from the story's core dread.
-- Do NOT default to "I'm a [job]" unless the credential is genuinely the most unsettling entry point for this specific story.
-- The hook should make someone need to know more — not summarize the story.
-
-━━━ ADAPTATION — NOT TRANSCRIPTION ━━━
-The source material is a premise, not a script. Use it for the core idea — the setup, the twist, the dread — then rewrite everything in your own voice.
-- Do NOT lift sentences or phrasing from the source. Rewrite entirely.
-- If the prose is clunky, flat, or Reddit-casual — replace it. Keep the bones, lose the skin.
-- If the ending is missing, weak, or cuts off — invent one. Follow the logic of what was established. Make it land.
-- The final script should feel like a story told by a skilled narrator, not a Reddit post read aloud.
+- Write in natural spoken English. Contractions only. Short sentences. Vary rhythm — mix a long one with two short punchy ones.
+- NO AI-isms: "spiraled", "at the end of the day", "toxic", "boundaries", "gaslit", "unpacked", "processed", "healing", "it hit me", "I realized in that moment", "navigate", "journey", "valid".
+- NO NAMES: Use roles — "my sister", "my boss", "my boyfriend's mom".
+- Write like you're venting to a friend who's about to lose their mind on your behalf.
+- If the source uses censored words (f***, s***, a**, b****), write the actual word. Never write asterisks.
+- Use natural spoken pauses: em-dashes for interruptions, a beat before key details. Let the story breathe.
 
 ━━━ STRUCTURE ━━━
-- Hook first — the worst moment, cold open style. Then rewind.
-- Build dread through specific, mundane details — not adjectives.
-- End with a hard, short closer. Under 5 words. Final image, not a summary. Never cut it, never soften it.
+- Start by rewinding into how it started. No hook — that is handled separately.
+- Each sentence in the body makes the other person look worse than the last. Concrete actions only — not character judgements.
+- End with a short hard closer. Under 8 words. The most damning detail — not a summary, not a repeat of the hook.
+- Stay faithful to the source. Do not add events or people not in the source.
+
+━━━ VERIFY BEFORE RETURNING ━━━
+1. No hook written — story starts mid-scene, not with an opener.
+2. Closer: under 8 words, explicit, does NOT repeat anything from the opener.
+3. Any proper names? Replace with roles.
+4. Any invented details? Remove them.
 """
 
+
 def _clean_body(text: str) -> str:
-    import re
-    text = re.sub(r'\.\s*\.\s*\.', '', text)       # strip ellipsis variants: . . . / ...
-    text = re.sub(r'\*+', '', text)                 # strip markdown bold/italic
-    text = re.sub(r'#+\s*', '', text)               # strip markdown headers
-    text = re.sub(r'\[.*?\]\(.*?\)', '', text)      # strip markdown links
+    text = re.sub(r'\.\s*\.\s*\.', '', text)
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'#+\s*', '', text)
+    text = re.sub(r'\[.*?\]\(.*?\)', '', text)
     text = re.sub(r'\s{2,}', ' ', text).strip()
     return text
+
 
 def write_script_claude(context: dict, config: dict) -> dict:
     story = context.get("the_theory") or context
@@ -60,50 +46,47 @@ def write_script_claude(context: dict, config: dict) -> dict:
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-    response = client.messages.create(
+    r = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=512,
+        max_tokens=500,
         temperature=0.7,
         system=_SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Return only a raw JSON object with no markdown, no code blocks, no explanation.\n"
-                    f"Format: {{\"full_script\": \"...\"}}\n\n"
-                    f"STRICT LIMIT: Between 150 and 250 words. Do not exceed 250 words.\n\n"
-                    f"SOURCE TITLE (for context only — do NOT read this aloud): {story['title']}\n"
-                    f"BODY: {body_text[:12000]}"
-                )
-            }
-        ]
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Write a TikTok drama script from this source. 240–260 words total.\n\n"
+                f"SOURCE TITLE: {story['title']}\n"
+                f"SOURCE BODY: {body_text[:12000]}\n\n"
+                f"Also return a card_title: an 'Am I the asshole for...' question. "
+                f"If the title already starts with AITA/AITAH, rewrite it as 'Am I the asshole for [rest of title]'. "
+                f"If not, derive what the AITA question would be from context. Keep it under 12 words after 'for'.\n\n"
+                f"Return raw JSON only: {{\"script\": \"...\", \"card_title\": \"Am I the asshole for ...\"}}"
+            )
+        }]
     )
 
-    raw_text = response.content[0].text.strip()
-    start_idx = raw_text.find('{')
-    end_idx = raw_text.rfind('}') + 1
-    json_str = raw_text[start_idx:end_idx].replace('\n', ' ').replace('\r', ' ')
-    return json.loads(json_str)
+    raw = r.content[0].text.strip()
+    s, e = raw.find('{'), raw.rfind('}') + 1
+    parsed = json.loads(raw[s:e].replace('\n', ' ').replace('\r', ' '))
+    return {"full_script": parsed["script"].strip(), "card_title": parsed.get("card_title", "").strip()}
+
 
 def run(ctx: dict, config: dict) -> dict:
-    title = ctx.get('title', '').strip()
-
     try:
         result = write_script_claude(ctx, config)
         body = result.get("full_script", "").strip()
+        card_title = result.get("card_title", "")
     except Exception as e:
         print(f"Claude Error: {e}")
         body = "Something went wrong with the transmission."
+        card_title = ""
 
-    full_text = body
-
-    # Collapse whitespace
+    full_text = re.sub(r'\*+', '', body)  # strip any remaining asterisks
     full_text = re.sub(r'\s+', ' ', full_text).strip()
 
-    # Hard truncate to 250 words
     words = full_text.split()
-    if len(words) > 250:
-        full_text = " ".join(words[:250])
+    if len(words) > 260:
+        full_text = " ".join(words[:220])
         last_p = full_text.rfind('.')
         if last_p != -1:
             full_text = full_text[:last_p + 1]
@@ -111,5 +94,6 @@ def run(ctx: dict, config: dict) -> dict:
     print(f"[script_agent] FINAL COUNT: {len(full_text.split())} words.")
     return {
         "post_id": ctx.get("post_id"),
-        "script": full_text
+        "script": full_text,
+        "card_title": card_title,
     }

@@ -1,6 +1,20 @@
 import os
+import html
+import re
 import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
+
+
+def _add_breaks(text: str) -> str:
+    """Insert subtle SSML break tags at natural pause points."""
+    escaped = html.escape(text)
+    # Sentence endings — 200ms pause
+    escaped = re.sub(r'([.!?])\s+', r'\1<break time="200ms"/> ', escaped)
+    # Em-dashes — 120ms
+    escaped = re.sub(r'\s*—\s*', r'<break time="120ms"/>— ', escaped)
+    # Commas — 80ms
+    escaped = re.sub(r',\s+', r',<break time="80ms"/> ', escaped)
+    return escaped
 
 load_dotenv()
 
@@ -47,7 +61,7 @@ def run(script_text: str, output_path: str, config: dict, narrator_gender: str =
         f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
         f'<voice name="{voice}">'
         f'<prosody rate="{rate}" pitch="{pitch}">'
-        f'{script_text}'
+        f'{_add_breaks(script_text)}<break time="400ms"/><prosody pitch="+8%" rate="-10%">What do you think?</prosody>'
         f'</prosody></voice></speak>'
     )
 
