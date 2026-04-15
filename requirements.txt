@@ -1,25 +1,24 @@
 # Crawl
-praw>=7.7.0
-
-# Sense / RAG
-sentence-transformers>=2.7.0
-qdrant-client>=1.9.0
+requests>=2.31.0
 
 # Draft / LLM
-openai>=1.30.0
+anthropic>=0.25.0
 
 # Forge / TTS
-edge-tts>=6.1.9      # Microsoft Edge neural TTS (free, Python 3.13 compatible)
-elevenlabs>=1.2.0    # ElevenLabs fallback
+azure-cognitiveservices-speech>=1.37.0
 
 # Forge / Video
-# ffmpeg-python is a wrapper — ffmpeg binary must be installed separately
 ffmpeg-python>=0.2.0
+Pillow>=10.0.0
+
+# Slicer
+yt-dlp>=2024.1.0
+
+# Publish
+google-api-python-client>=2.120.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
 
 # Config / Utilities
 pyyaml>=6.0
 python-dotenv>=1.0.0
-
-# Dashboard
-streamlit>=1.35.0
-pandas>=2.2.0

@@ -8,16 +8,8 @@ farm:
   subreddits:
     - name: "AITAH"
       min_score: 500
-      tier: "primary"
     - name: "AmItheAsshole"
       min_score: 500
-      tier: "primary"
-    - name: "relationship_advice"
-      min_score: 300
-      tier: "secondary"
-    - name: "TrueOffMyChest"
-      min_score: 200
-      tier: "secondary"
 
 crawl:
   min_upvote_ratio: 0.8
@@ -30,14 +22,36 @@ crawl:
 # TTS Settings
 tts:
   engine: "azure"
-  voice: "en-US-NancyNeural"
   voice_male: "en-US-EricNeural"
+  voice_female: "en-US-NancyNeural"
   rate: "28%"
   pitch: "+0st"
+  cta: "What do you think?"
+  cta_pitch: "+8%"
+  cta_rate: "-10%"
+
+# Video Assembly Settings (font_path: update for server)
+composer:
+  font_path: "C:/Windows/Fonts/cour.ttf"
+  subtitle_font: "Bahnschrift"
+
+# Slicer / background pool
+slicer:
+  replenish_threshold: 3    # trigger auto-replenish when pool drops below this
+  chunk_length: 90          # seconds per background clip
+  search_queries:
+    - "satisfying workers compilation"
+    - "oddly satisfying compilation"
+    - "satisfying video compilation"
+    - "relaxing satisfying compilation"
+    - "satisfying skills compilation"
+
+# Google Drive — set enabled: true and paste your folder ID to save videos for cross-posting
+drive:
+  enabled: true
+  folder_id: "1TUtxGwSq5RLO2BX6dR9_OHq-rJ2Sj7hc"   # right-click folder in Drive → Get link → ID is the long string after /folders/
 
 # Video Assembly Settings
 video:
   resolution: "1080x1920"
   fps: 30
-  caption_words_per_frame: 1
-  case_card_duration: 3.0
