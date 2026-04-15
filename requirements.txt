@@ -23,3 +23,5 @@ google-auth-httplib2>=0.2.0
 # Config / Utilities
 pyyaml>=6.0
 python-dotenv>=1.0.0
+schedule>=1.2.0
+flask>=3.0.0
