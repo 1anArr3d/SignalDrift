@@ -1,21 +1,22 @@
 # SignalDrift — MVP Reference
 
-Automated pipeline that crawls Reddit AITA/drama posts, generates first-person narrated scripts, synthesizes TTS audio with word-level timing, and renders captioned 1080x1920 MP4s for TikTok/Shorts.
+Automated pipeline that crawls Reddit AITA/drama posts, generates first-person narrated scripts, synthesizes TTS audio with word-level timing, and renders captioned 1080x1920 MP4s for YouTube Shorts / TikTok.
 
 ---
 
 ## Pipeline Stages
 
 ```
-crawl → score → draft → forge → post
+crawl → score → draft → forge → upload
 ```
 
 | Stage | Entry point | What it does |
 |-------|-------------|--------------|
-| crawl | `crawl/reddit_crawler.py` | Pulls top+hot from AITAH/AmItheAsshole/relationship_advice, deduplicates |
-| score | `crawl/scorer.py` | Rule pre-filter (score, ratio, length) then single Claude micro-call; failures go to sunset archive |
-| draft | `draft/script_agent.py` | Claude Sonnet writes 240–260 word first-person drama script + card_title |
-| forge | `forge/tts.py` + `forge/composer.py` | Azure TTS (NancyNeural) with SSML breaks → captioned MP4 with background clip + ambient music |
+| crawl | `crawl/reddit_crawler.py` | Pulls top+hot from configured subreddits, deduplicates against SQLite |
+| score | `crawl/scorer.py` | Rule pre-filter (score, ratio, length, title keywords) then Claude micro-call; assigns `narrator_gender` |
+| draft | `draft/script_agent.py` | Claude Sonnet writes 240–260 word first-person drama script + `card_title` |
+| forge | `forge/tts.py` + `forge/composer.py` | Azure TTS with SSML breaks → captioned MP4 with background clip |
+| upload | `publish/youtube_uploader.py` + `publish/drive_uploader.py` | Posts to YouTube Shorts; mirrors to Google Drive for cross-posting |
 
 ---
 
@@ -28,80 +29,86 @@ python main.py
 # Produce N videos in one run
 python main.py --count 5
 
-# Crawl only (refresh classified_posts.json)
+# Crawl only (fill queue)
 python main.py --stage crawl
 
 # Forge only from existing queue
 python main.py --stage forge --count 3
 
-# Draft only — inspect before forging
+# Draft only — inspect script before forging
 python main.py --post-id <post_id> --draft-only
 
-# Forge a specific post by ID
+# Redraft + forge a specific post by ID
 python main.py --post-id <post_id>
 ```
 
 ---
 
-## Slicer
+## Slicer / Background Pool
 
-Processes raw footage into a pool of 90-second background clips.
+Background clips are auto-downloaded via yt-dlp when the pool drops below `replenish_threshold`.
 
 ```bash
-# Drop .mp4 files into slicer/input/ then run:
+# Manual replenish (or drop .mp4s into slicer/input/ and run):
 python slicer/silcer_mvp.py
 ```
 
 **How it works:**
-1. Reads duration of each input file
-2. Cuts into 90-second chunks — no motion analysis, no pixel sampling
-3. Chunks saved to `slicer/background_pool/`
+1. `pool_manager.py` checks clip count before each forge
+2. Below threshold → `fetch.py` downloads from configured `search_queries` via yt-dlp
+3. `silcer_mvp.py` slices downloads into `chunk_length`-second chunks → `slicer/background_pool/`
+4. Each forge picks a random clip and deletes it after use
 
-**Pool rotation:** Each forge picks a random clip and deletes it after use. Raises `PoolEmptyError` when pool is empty — re-run the slicer to refill.
-
-**Background content:** Use royalty-free or low-enforcement footage (satisfying/oddly satisfying compilations, ambient b-roll). Avoid anything owned by large media companies (e.g. TheSoul Publishing / Five Minute Crafts) — Content ID will flag it on YouTube Shorts over 60s.
+**Content guidance:** Use royalty-free or low-enforcement footage (satisfying/oddly satisfying compilations, ambient b-roll). Avoid anything owned by large media companies (e.g. TheSoul Publishing / Five Minute Crafts) — Content ID flags it on Shorts over 60s.
 
 ---
 
-## Config
-
-`config.yaml` controls all tunable parameters:
+## Config (`config.yaml`)
 
 ```yaml
-brand:
-  name: "FirstPerson"
-  niche: "drama"
-
 farm:
   subreddits:
     - name: "AITAH"
       min_score: 500
-      tier: "primary"
     - name: "AmItheAsshole"
       min_score: 500
-      tier: "primary"
-    - name: "relationship_advice"
-      min_score: 300
-      tier: "secondary"
 
 tts:
   engine: "azure"
-  voice: "en-US-NancyNeural"       # female (default)
-  voice_male: "en-US-EricNeural"   # routed by narrator_gender from scorer
+  voice_male: "en-US-EricNeural"
+  voice_female: "en-US-NancyNeural"   # routed by narrator_gender from scorer
   rate: "28%"
   pitch: "+0st"
+  cta: "What do you think?"
+
+slicer:
+  replenish_threshold: 3
+  chunk_length: 90
+  search_queries:
+    - "satisfying workers compilation"
+
+drive:
+  enabled: true
+  folder_id: "<your-drive-folder-id>"
 ```
 
 ---
 
-## Data Files
+## Persistence
 
-| File | Purpose |
-|------|---------|
-| `output/classified_posts.json` | Scored posts available for drafting |
-| `output/queue/<post_id>.json` | Drafted scripts ready to forge |
-| `output/seen_posts.json` | All processed post IDs (dedup) |
-| `output/sunset_posts.json` | Archive of every post — scored, rejected, and used |
+All state is stored in `output/signaldrift.db` (SQLite). Status flow:
+
+```
+queued → drafted → used
+               ↘ rejected
+```
+
+| Status | Meaning |
+|--------|---------|
+| `queued` | Passed scoring, waiting to draft+forge |
+| `drafted` | Draft saved, ready to forge |
+| `used` | Forged and uploaded |
+| `rejected` | Failed scoring |
 
 ---
 
@@ -109,29 +116,17 @@ tts:
 
 | Path | Contents |
 |------|----------|
-| `assets/music/` | Ambient music loops mixed under narration at 8% volume |
-| `slicer/input/` | Drop raw footage here before slicing |
-| `slicer/background_pool/` | Processed 90s clips ready for forge |
+| `assets/music/` | Ambient music loops mixed under narration |
+| `slicer/input/` | Drop raw footage here for manual slicing |
+| `slicer/background_pool/` | Processed clips ready for forge |
 
 ---
 
 ## Video Structure
 
-Each rendered video follows this structure:
-
-1. **Card** — white card with `[ AITA ]` label, displays the `card_title` question
-2. **Narration reads card_title aloud** — card stays up until it finishes
-3. **Card drops** — word-by-word captions take over
-4. **Story body** — 240–260 words, first-person drama
-5. **CTA** — `"What do you think?"` with emphasis break at the end
-
----
-
-## Performance Tracking
-
-Every rendered video includes a `tiktok_tag` (`#sd<post_id>`) printed at forge time.
-
-Add this tag to the TikTok description. When you pull analytics later, join on the tag to link views/saves/watch time back to the source post in `sunset_posts.json`.
+1. **Hook card** — displays the `card_title` AITA question while narration reads it aloud
+2. **Body** — 240–260 words, first-person drama, word-by-word captions
+3. **CTA** — `"What do you think?"` with pitch/rate change at the end
 
 ---
 
@@ -141,23 +136,46 @@ Add this tag to the TikTok description. When you pull analytics later, join on t
 ANTHROPIC_API_KEY=
 AZURE_SPEECH_KEY=
 AZURE_SPEECH_REGION=
-REDDIT_CLIENT_ID=
-REDDIT_CLIENT_SECRET=
-REDDIT_USER_AGENT=
 ```
+
+---
+
+## Server Deployment (Ubuntu)
+
+```bash
+git clone <repo> /opt/signaldrift
+cd /opt/signaldrift
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# Copy auth tokens from local machine
+scp token.json drive_token.json user@server:/opt/signaldrift/
+scp client_secret.json user@server:/opt/signaldrift/
+
+# Update composer.font_path in config.yaml for Linux fonts
+# e.g. /usr/share/fonts/truetype/courier-prime/CourierPrime-Regular.ttf
+```
+
+Cron schedules are in `scheduler/crontab.txt`.
 
 ---
 
 ## Roadmap
 
 ### Near-term
-- **Auto-post** — push rendered MP4s to TikTok/Shorts via API on a schedule
-- **Performance tracker** — log every rendered video: word count, narrator gender, posting time → `output/performance_log.json`
+- **TikTok API** — apply for developer access (gated); post alongside YouTube automatically
+- **Facebook cross-post** — via Drive mirror
+
+### Compilation pipeline
+- **Daily long-form** — stitch that day's Shorts into a single upload
+- One pipeline feeds the other
+
+### Spanish channel
+- Same pipeline, separate config — Spanish prompts, Azure Spanish neural voice, Spanish AITA subreddits
+- `python main.py --config config_es.yaml`
 
 ### Data
-- **TikTok metric ingestion** — pull views, saves, watch time and join on `#sd<post_id>` tag
 - **Post classifier** — once 50–100 videos have metrics, replace heuristic scorer with a data-driven one
 
 ### Scale
-- **Multi-account / multi-niche** — only prompts + subreddit config swap between farms; pipeline stays identical
-- **Batch scheduling** — cron to run `python main.py --count 5` daily automatically
+- **Multi-niche / multi-account** — only prompts + subreddit config swap between farms

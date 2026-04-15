@@ -13,24 +13,20 @@ __pycache__/
 *.mp4
 
 # --- Pipeline Data ---
-output/queue/*.json
 output/rendered/
-output/classified_posts.json
-output/seen_posts.json
-output/crawl_state.json
-output/sunset_posts.json
+output/signaldrift.db
 tester.py
-
-# --- Assets ---
-assets/backgrounds/*
-assets/music/*
-!assets/backgrounds/.gitkeep
-!assets/music/.gitkeep
 
 # --- Slicer ---
 slicer/input/*.mp4
 slicer/background_pool/
 slicer/pool_state.json
+
+# --- Credentials ---
+token.json
+drive_token.json
+client_secret.json
+client_secret_*.json
 
 # --- Legacy Cleanup ---
 qdrant_storage/
