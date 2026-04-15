@@ -1,106 +1,42 @@
 import argparse
-import json
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
 import yaml
 
 # Stage imports
-from crawl import reddit_crawler, cleaner
+from crawl import reddit_crawler
 from crawl.scorer import score_batch
 from draft import script_agent
 from forge import tts, composer
 from slicer.pool_manager import get_random_clip, consume_clip, PoolEmptyError
+from publish import youtube_uploader, drive_uploader
+import store
 
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
 
-_SEEN_LOG      = "output/seen_posts.json"
-_CLASSIFIED    = "output/classified_posts.json"
-_SUNSET        = "output/sunset_posts.json"
-
-# --- JSON Helpers ---
-def _save_json(data, path: str) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-def _load_json(path: str):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-def _load_seen() -> set:
-    if not Path(_SEEN_LOG).exists(): return set()
-    return set(_load_json(_SEEN_LOG))
-
-def _mark_seen(post_id: str) -> None:
-    seen = list(_load_seen())
-    if post_id not in seen:
-        seen.append(post_id)
-        _save_json(sorted(seen), _SEEN_LOG)
-
-# --- Sunset helpers ---
-def _load_sunset() -> list:
-    if not Path(_SUNSET).exists(): return []
-    return _load_json(_SUNSET)
-
-def _sunset_posts(posts: list, used_at: str = None, video_path: str = None) -> None:
-    """Append posts to sunset_posts.json, preserving all data + metadata."""
-    archive = _load_sunset()
-    for post in posts:
-        entry = dict(post)
-        if used_at:
-            entry["used_at"] = used_at
-        if video_path:
-            entry["video_path"] = video_path
-        archive.append(entry)
-    _save_json(archive, _SUNSET)
-
-def _remove_from_classified(post_id: str) -> None:
-    """Remove a post from classified_posts.json after it has been used."""
-    if not Path(_CLASSIFIED).exists():
-        return
-    posts = _load_json(_CLASSIFIED)
-    remaining = [p for p in posts if p["post_id"] != post_id]
-    _save_json(remaining, _CLASSIFIED)
-
 # ---------------------------------------------------------------------------
 # Stage: crawl
 # ---------------------------------------------------------------------------
-def _load_all_seen_ids() -> set:
-    ids = _load_seen()
-    if Path(_SUNSET).exists():
-        sunset = _load_json(_SUNSET)
-        ids.update(p["post_id"] for p in sunset if "post_id" in p)
-    if Path(_CLASSIFIED).exists():
-        classified = _load_json(_CLASSIFIED)
-        ids.update(p["post_id"] for p in classified if "post_id" in p)
-    return ids
-
-def run_crawl(config: dict, all_subs: bool = False) -> list[dict]:
+def run_crawl(config: dict) -> list[dict]:
     print("\n=== STAGE: crawl ===")
-    raw_posts = reddit_crawler.run(config, all_subs=all_subs)
-    cleaned_posts = cleaner.run(raw_posts)
+    raw_posts = reddit_crawler.run(config)
 
-    # Skip posts we've already seen or scored before
-    seen_ids = _load_all_seen_ids()
-    fresh_posts = [p for p in cleaned_posts if p["post_id"] not in seen_ids]
-    skipped = len(cleaned_posts) - len(fresh_posts)
+    seen_ids = store.get_all_known_ids()
+    fresh_posts = [p for p in raw_posts if p["post_id"] not in seen_ids]
+    skipped = len(raw_posts) - len(fresh_posts)
     if skipped:
         print(f"[main] Skipped {skipped} already-seen posts.")
 
-    # Score — only passed posts enter the queue
     passed, failed = score_batch(fresh_posts, config=config)
 
-    # Sunset rejected posts immediately — data preserved, not lost
     if failed:
-        failed_slim = [{k: v for k, v in p.items() if k != "body"} for p in failed]
-        _sunset_posts(failed_slim)
-        print(f"[main] {len(failed)} posts failed scoring → sunset_posts.json")
+        store.insert_rejected(failed)
+        print(f"[main] {len(failed)} posts failed scoring → rejected.")
 
-    _save_json(passed, _CLASSIFIED)
+    store.insert_queued(passed)
     print(f"[main] Crawl complete. {len(passed)} posts queued.")
     return passed
 
@@ -118,21 +54,21 @@ def run_draft(post: dict, config: dict) -> dict:
     }
 
     script_result = script_agent.run(ctx, config)
+    store.save_draft(
+        post["post_id"],
+        script=script_result["script"],
+        card_title=script_result.get("card_title", ""),
+    )
 
-    draft_output = {
+    return {
         "post_id": post["post_id"],
         "subreddit": post["subreddit"],
         "title": post["title"],
         "body": post.get("body", ""),
         "script": script_result["script"],
         "card_title": script_result.get("card_title", ""),
-        "narrator_gender": post.get("score", {}).get("narrator_gender", "neutral"),
-        "tiktok_tag": f"#sd{post['post_id']}",   # tag for performance tracking
+        "narrator_gender": post.get("narrator_gender", "neutral"),
     }
-
-    queue_path = f"output/queue/{post['post_id']}.json"
-    _save_json(draft_output, queue_path)
-    return draft_output
 
 # ---------------------------------------------------------------------------
 # Stage: forge
@@ -142,17 +78,18 @@ def run_forge(draft: dict, config: dict) -> str:
     print(f"\n=== STAGE: forge [{draft['post_id']}] ===")
 
     post_id = draft["post_id"]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    audio_path = str(Path(f"output/rendered/{post_id}.mp3"))
+    audio_path = str(Path(f"output/rendered/{post_id}.wav"))
     video_path = str(Path(f"output/rendered/{post_id}.mp4"))
 
-    bg_path = get_random_clip()
+    try:
+        bg_path = get_random_clip(config)
+    except PoolEmptyError as e:
+        print(f"[main] {e}")
+        raise
 
     narrator_gender = draft.get("narrator_gender", "neutral")
     print(f"[main] Narrator gender: {narrator_gender}")
 
-    # card_title is spoken first, then the script body follows
     card_title = draft.get("card_title") or draft["title"]
     full_tts_text = card_title + " " + draft["script"]
 
@@ -162,14 +99,10 @@ def run_forge(draft: dict, config: dict) -> str:
         print(f"[main] TTS Error: {e}")
         raise
 
-    # Card disappears after card_title words finish speaking
-    card_word_count = len(card_title.split())
-
     post_info = {
         "title": draft["title"],
         "subreddit": draft["subreddit"],
-        "hook": card_title,           # word count used for timing
-        "hook_display": card_title,   # text shown on card
+        "hook": card_title,
     }
 
     composer.compose(
@@ -182,99 +115,76 @@ def run_forge(draft: dict, config: dict) -> str:
     )
 
     consume_clip(bg_path)
-
-    # Remove intermediate audio file
     Path(audio_path).unlink(missing_ok=True)
 
-    _mark_seen(post_id)
-
-    # Sunset the used post — move out of classified, preserve in archive
-    _remove_from_classified(post_id)
-    _sunset_posts(
-        [{"post_id": post_id, "title": draft["title"], "subreddit": draft["subreddit"],
-          "tiktok_tag": draft.get("tiktok_tag", ""), "body": draft.get("body", "")}],
-        used_at=datetime.now().isoformat(),
-        video_path=video_path
-    )
-
     print(f"[main] Video complete: {video_path} ({time.time()-start_time:.1f}s)")
-    print(f"[main] TikTok tag: {draft.get('tiktok_tag', '')}")
-    return video_path
 
-# ---------------------------------------------------------------------------
-# Orchestration
-# ---------------------------------------------------------------------------
-def run_pipeline(config: dict, count: int = 1) -> None:
-    posts = run_crawl(config)
-    seen = _load_seen()
+    description = (
+        "#aita #aitah #amitheassholeforreal #amitheasshole #redditstories #reddit #redditdrama "
+        "#storytime #storytelling #truestory #firstperson #confession #drama #relationships "
+        "#relationship #relationshipadvice #family #familydrama #toxic #revenge #pettythings "
+        "#fyp #foryou #foryoupage #viral #trending #shorts #shortsviral #youtubeshorts"
+    )
+    tags = [
+        "aita", "aitah", "amitheasshole", "amitheassholeforreal",
+        "reddit", "redditstories", "redditdrama", "askreddit",
+        "storytime", "storytelling", "truestory", "confession", "firstperson",
+        "drama", "relationships", "relationship", "relationshipadvice",
+        "family", "familydrama", "toxic", "revenge",
+        "fyp", "foryou", "viral", "trending", "shorts", "youtubeshorts"
+    ]
+    youtube_uploader.upload(video_path, title=f"{card_title} #Shorts", description=description, tags=tags)
 
-    to_process = [p for p in posts if p["post_id"] not in seen]
-    to_process = sorted(to_process, key=lambda x: x.get("score", {}).get("overall", 0), reverse=True)[:count]
-
-    if not to_process:
-        print("[main] No new posts to process.")
-        return
-
-    for post in to_process:
+    drive_cfg = config.get("drive", {})
+    if drive_cfg.get("enabled", False):
         try:
-            draft = run_draft(post, config)
-            run_forge(draft, config)
+            drive_uploader.upload(
+                video_path,
+                filename=f"{post_id}.mp4",
+                folder_id=drive_cfg.get("folder_id")
+            )
         except Exception as e:
-            print(f"[main] FAILED post {post['post_id']}: {e}")
+            print(f"[main] Drive upload failed (video still on YouTube): {e}")
+
+    store.mark_used(post_id, used_at=datetime.now().isoformat())
+
+    Path(video_path).unlink(missing_ok=True)
+    print(f"[main] Cleaned up {video_path}")
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", choices=["crawl", "forge"])
     parser.add_argument("--count", type=int, default=1)
-    parser.add_argument("--all", action="store_true", help="Crawl all subreddits at once")
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--post-id", help="Reforge a specific post by ID using its existing queue JSON")
+    parser.add_argument("--post-id", help="Redraft/reforge a specific post by ID")
     parser.add_argument("--draft-only", action="store_true", help="Run draft stage only, skip forge")
     args = parser.parse_args()
 
     config = load_config(args.config)
+    store.init()
 
     if args.post_id:
-        queue_path = Path(f"output/queue/{args.post_id}.json")
-        if queue_path.exists():
-            if args.draft_only:
-                print(f"[main] Queue JSON already exists for {args.post_id}. Delete it first to redraft.")
-                return
-            draft = _load_json(str(queue_path))
-            run_forge(draft, config)
+        post = store.get_post(args.post_id)
+        if not post:
+            print(f"[main] {args.post_id} not found in database.")
             return
 
-        # Search classified
-        match = None
-        if Path(_CLASSIFIED).exists():
-            match = next((p for p in _load_json(_CLASSIFIED) if p["post_id"] == args.post_id), None)
+        if post["status"] == "used":
+            print(f"[main] Found {args.post_id} in archive — redrafting.")
 
-        # Fall back to sunset
-        if not match and Path(_SUNSET).exists():
-            match = next((p for p in _load_json(_SUNSET) if p["post_id"] == args.post_id), None)
-            if match:
-                print(f"[main] Found {args.post_id} in sunset — redrafting.")
-
-        if not match:
-            print(f"[main] {args.post_id} not found in queue, classified, or sunset.")
-            return
-
-        draft = run_draft(match, config)
+        draft = run_draft(post, config)
         if not args.draft_only:
             run_forge(draft, config)
         else:
-            print(f"[main] Draft saved to output/queue/{args.post_id}.json — inspect before forging.")
+            print(f"[main] Draft saved for {args.post_id} — inspect before forging.")
         return
 
     if args.stage == "crawl":
-        run_crawl(config, all_subs=args.all)
+        run_crawl(config)
 
     elif args.stage == "forge":
-        # Draft then forge the top N scored posts from classified
-        seen = _load_seen()
-        posts = _load_json(_CLASSIFIED)
-        to_process = [p for p in posts if p["post_id"] not in seen]
-        to_process = sorted(to_process, key=lambda x: x.get("score", {}).get("overall", 0), reverse=True)[:args.count]
+        posts = store.get_queued()
+        to_process = posts[:args.count]
         if not to_process:
             print("[main] No posts available. Run --stage crawl first.")
             return
@@ -286,7 +196,18 @@ def main() -> None:
                 print(f"[main] FAILED post {post['post_id']}: {e}")
 
     else:
-        run_pipeline(config, count=args.count)
+        run_crawl(config)
+        posts = store.get_queued()
+        to_process = posts[:args.count]
+        if not to_process:
+            print("[main] No new posts to process.")
+            return
+        for post in to_process:
+            try:
+                draft = run_draft(post, config)
+                run_forge(draft, config)
+            except Exception as e:
+                print(f"[main] FAILED post {post['post_id']}: {e}")
 
 if __name__ == "__main__":
     main()
