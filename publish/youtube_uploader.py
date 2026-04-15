@@ -55,10 +55,15 @@ def upload(video_path: str, title: str, description: str = "", tags: list = None
             "description": description,
             "tags": tags or [],
             "categoryId": "22",  # People & Blogs
+            "defaultLanguage": "en",
         },
         "status": {
             "privacyStatus": "public",
             "selfDeclaredMadeForKids": False,
+            "containsSyntheticMedia": True,
+            "embeddable": True,
+            "publicStatsViewable": True,
+            "license": "youtube",
         }
     }
 

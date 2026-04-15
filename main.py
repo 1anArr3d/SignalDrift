@@ -121,6 +121,7 @@ def run_forge(draft: dict, config: dict) -> str:
 
     description = (
         f"{card_title}\n\n"
+        f"{draft['script'][:200].strip()}...\n\n"
         "#aita #aitah #redditstories #storytelling #youtubeshorts "
         "#redditdrama #storytime #drama #relationships #shorts"
     )
@@ -128,7 +129,7 @@ def run_forge(draft: dict, config: dict) -> str:
         "aita", "aitah", "redditstories", "storytelling", "youtubeshorts",
         "redditdrama", "storytime", "drama", "relationships", "shorts"
     ]
-    youtube_uploader.upload(video_path, title=f"{card_title} #Shorts", description=description, tags=tags)
+    youtube_uploader.upload(video_path, title=card_title, description=description, tags=tags)
 
     drive_cfg = config.get("drive", {})
     if drive_cfg.get("enabled", False):
