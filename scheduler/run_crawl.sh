@@ -6,4 +6,4 @@ cd /opt/signaldrift || exit 1
 
 source venv/bin/activate
 
-python main.py --stage crawl >> logs/pipeline.log 2>&1
+torsocks python main.py --stage crawl >> logs/pipeline.log 2>&1
