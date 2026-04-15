@@ -36,8 +36,16 @@ def _get_credentials():
     return creds
 
 
+def _sanitize_title(title: str) -> str:
+    title = title.replace("<", "").replace(">", "").strip()
+    if not title:
+        title = "Reddit AITA Story"
+    return title[:100]
+
+
 def upload(video_path: str, title: str, description: str = "", tags: list = None) -> str:
     """Upload a video to YouTube. Returns the video ID."""
+    title = _sanitize_title(title)
     creds = _get_credentials()
     youtube = build("youtube", "v3", credentials=creds)
 

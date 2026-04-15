@@ -10,5 +10,5 @@
 0 23 * * * /opt/signaldrift/scheduler/run_pipeline.sh
 0 2  * * * /opt/signaldrift/scheduler/run_pipeline.sh
 
-# Long-form compilation slot (4pm) — pipeline TBD
-# 0 16 * * * /opt/signaldrift/scheduler/run_compilation.sh
+# Compilation: 10pm CST (4am UTC) — skips if fewer than 6 clips are ready
+0 4 * * * /opt/signaldrift/scheduler/run_compilation.sh

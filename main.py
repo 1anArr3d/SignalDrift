@@ -142,9 +142,7 @@ def run_forge(draft: dict, config: dict) -> str:
             print(f"[main] Drive upload failed (video still on YouTube): {e}")
 
     store.mark_used(post_id, used_at=datetime.now().isoformat())
-
-    Path(video_path).unlink(missing_ok=True)
-    print(f"[main] Cleaned up {video_path}")
+    print(f"[main] Kept {video_path} for compilation.")
 
 def main() -> None:
     parser = argparse.ArgumentParser()
