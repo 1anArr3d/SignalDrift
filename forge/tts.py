@@ -1,29 +1,30 @@
 import os
 import html
 import re
-import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
+import azure.cognitiveservices.speech as speechsdk
+
+load_dotenv()
 
 
 def _add_breaks(text: str) -> str:
     """Insert subtle SSML break tags at natural pause points."""
     escaped = html.escape(text)
-    # Sentence endings — 200ms pause
-    escaped = re.sub(r'([.!?])\s+', r'\1<break time="200ms"/> ', escaped)
-    # Em-dashes — 120ms
-    escaped = re.sub(r'\s*—\s*', r'<break time="120ms"/>— ', escaped)
-    # Commas — 80ms
-    escaped = re.sub(r',\s+', r',<break time="80ms"/> ', escaped)
+    # Sentence endings — 150ms pause
+    escaped = re.sub(r'([.!?])\s+', r'\1<break time="150ms"/> ', escaped)
+    # Em-dashes — 80ms
+    escaped = re.sub(r'\s*—\s*', r'<break time="80ms"/>— ', escaped)
+    # Commas — 50ms
+    escaped = re.sub(r',\s+', r',<break time="50ms"/> ', escaped)
     return escaped
 
-load_dotenv()
 
 def run(script_text: str, output_path: str, config: dict, narrator_gender: str = "neutral") -> dict:
     tts_cfg = config.get("tts", {})
     if narrator_gender == "female":
-        voice = tts_cfg.get("voice_female", "en-US-JennyNeural")
+        voice = tts_cfg.get("voice_female", "en-US-NancyNeural")
     else:
-        voice = tts_cfg.get("voice", "en-US-EricNeural")
+        voice = tts_cfg.get("voice_male", "en-US-EricNeural")
 
     speech_key = os.environ.get("AZURE_SPEECH_KEY")
     speech_region = os.environ.get("AZURE_SPEECH_REGION")
@@ -55,13 +56,21 @@ def run(script_text: str, output_path: str, config: dict, narrator_gender: str =
 
     synthesizer.synthesis_word_boundary.connect(on_word_boundary)
 
-    rate = tts_cfg.get("rate", "90%")
-    pitch = tts_cfg.get("pitch", "-2st")
+    rate        = tts_cfg.get("rate", "0%")
+    pitch       = tts_cfg.get("pitch", "0st")
+    cta         = tts_cfg.get("cta", "")
+    cta_pitch   = tts_cfg.get("cta_pitch", "+8%")
+    cta_rate    = tts_cfg.get("cta_rate", "-10%")
+
+    cta_ssml = (
+        f'<break time="400ms"/><prosody pitch="{cta_pitch}" rate="{cta_rate}">{html.escape(cta)}</prosody>'
+        if cta else ""
+    )
     ssml = (
         f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
         f'<voice name="{voice}">'
         f'<prosody rate="{rate}" pitch="{pitch}">'
-        f'{_add_breaks(script_text)}<break time="400ms"/><prosody pitch="+8%" rate="-10%">What do you think?</prosody>'
+        f'{_add_breaks(script_text)}{cta_ssml}'
         f'</prosody></voice></speak>'
     )
 
