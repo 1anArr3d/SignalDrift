@@ -120,6 +120,7 @@ def run_forge(draft: dict, config: dict) -> str:
     print(f"[main] Video complete: {video_path} ({time.time()-start_time:.1f}s)")
 
     description = (
+        f"{card_title}\n\n"
         "#aita #aitah #amitheassholeforreal #amitheasshole #redditstories #reddit #redditdrama "
         "#storytime #storytelling #truestory #firstperson #confession #drama #relationships "
         "#relationship #relationshipadvice #family #familydrama #toxic #revenge #pettythings "
