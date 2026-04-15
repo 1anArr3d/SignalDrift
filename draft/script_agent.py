@@ -4,6 +4,7 @@ import os
 import re
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
 _SYSTEM_PROMPT = """\
@@ -11,14 +12,15 @@ You are a First-Person Drama Narrator writing for short-form TikTok video narrat
 
 ━━━ THE VOICE ━━━
 - Write in natural spoken English. Contractions only. Short sentences. Vary rhythm — mix a long one with two short punchy ones.
-- NO AI-isms: "spiraled", "at the end of the day", "toxic", "boundaries", "gaslit", "unpacked", "processed", "healing", "it hit me", "I realized in that moment", "navigate", "journey", "valid".
+- NO AI-isms: "spiraled", "at the end of the day", "toxic", "boundaries", "gaslit", "unpacked", "processed", "healing", "it hit me", "I realized in that moment", "navigate", "journey", "valid", "rewind", "let me take you back", "so let's go back".
 - NO NAMES: Use roles — "my sister", "my boss", "my boyfriend's mom".
 - Write like you're venting to a friend who's about to lose their mind on your behalf.
 - If the source uses censored words (f***, s***, a**, b****), write the actual word. Never write asterisks.
 - Use natural spoken pauses: em-dashes for interruptions, a beat before key details. Let the story breathe.
 
 ━━━ STRUCTURE ━━━
-- Start by rewinding into how it started. No hook — that is handled separately.
+- Drop straight into the story. No hook — that is handled separately.
+- NEVER open with "so rewind", "let me rewind", "so let me take you back", "rewind to", "let me explain", or any meta-framing. Start mid-scene.
 - Each sentence in the body makes the other person look worse than the last. Concrete actions only — not character judgements.
 - End with a short hard closer. Under 8 words. The most damning detail — not a summary, not a repeat of the hook.
 - Stay faithful to the source. Do not add events or people not in the source.
@@ -31,18 +33,8 @@ You are a First-Person Drama Narrator writing for short-form TikTok video narrat
 """
 
 
-def _clean_body(text: str) -> str:
-    text = re.sub(r'\.\s*\.\s*\.', '', text)
-    text = re.sub(r'\*+', '', text)
-    text = re.sub(r'#+\s*', '', text)
-    text = re.sub(r'\[.*?\]\(.*?\)', '', text)
-    text = re.sub(r'\s{2,}', ' ', text).strip()
-    return text
-
-
 def write_script_claude(context: dict, config: dict) -> dict:
-    story = context.get("the_theory") or context
-    body_text = _clean_body(story.get("body", ""))
+    body_text = context.get("body", "")
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -55,7 +47,7 @@ def write_script_claude(context: dict, config: dict) -> dict:
             "role": "user",
             "content": (
                 f"Write a TikTok drama script from this source. 240–260 words total.\n\n"
-                f"SOURCE TITLE: {story['title']}\n"
+                f"SOURCE TITLE: {context['title']}\n"
                 f"SOURCE BODY: {body_text[:12000]}\n\n"
                 f"Also return a card_title: an 'Am I the asshole for...' question. "
                 f"If the title already starts with AITA/AITAH, rewrite it as 'Am I the asshole for [rest of title]'. "
@@ -74,14 +66,14 @@ def write_script_claude(context: dict, config: dict) -> dict:
 def run(ctx: dict, config: dict) -> dict:
     try:
         result = write_script_claude(ctx, config)
-        body = result.get("full_script", "").strip()
-        card_title = result.get("card_title", "")
-    except Exception as e:
-        print(f"Claude Error: {e}")
-        body = "Something went wrong with the transmission."
-        card_title = ""
+    except anthropic.APIStatusError as e:
+        if e.status_code in (402, 429) and "credit" in str(e).lower():
+            raise RuntimeError("Anthropic credit balance too low — top up at console.anthropic.com") from e
+        raise
+    body = result.get("full_script", "").strip()
+    card_title = result.get("card_title", "")
 
-    full_text = re.sub(r'\*+', '', body)  # strip any remaining asterisks
+    full_text = body
     full_text = re.sub(r'\s+', ' ', full_text).strip()
 
     words = full_text.split()

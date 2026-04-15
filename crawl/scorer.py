@@ -1,41 +1,11 @@
 """
-scorer.py
-
-Lightweight hybrid scorer. Rule-based pre-filter first (free), then a single
-Claude call only for posts that pass rules. One sentence verdict, no rubric.
+scorer.py — rule-based filter only, no LLM call.
 """
 
-import json
-import os
-import anthropic
-from dotenv import load_dotenv
-
-load_dotenv()
-
-_CLIENT = None
-MODEL = "claude-haiku-4-5-20251001"
-SKIP_KEYWORDS = ["update", "part 2", "mod post", "announcement", "repost"]
-
-SYSTEM_PROMPT = """\
-You are a TikTok content filter. Decide if a Reddit post makes a good short drama script.
-Return JSON only. No explanation outside the JSON."""
-
-USER_PROMPT = """\
-Title: {title}
-Body: {body}
-
-Does this make a good 200-word TikTok drama script? Is the conflict clear and the other person clearly in the wrong?
-Return: {{"verdict": "pass" or "fail", "narrator_gender": "male" or "female" or "neutral"}}"""
+_DEFAULT_SKIP_KEYWORDS = ["update", "part 2", "mod post", "announcement", "repost"]
 
 
-def _get_client():
-    global _CLIENT
-    if _CLIENT is None:
-        _CLIENT = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    return _CLIENT
-
-
-def _narrator_gender_fallback(post: dict) -> str:
+def _narrator_gender(post: dict) -> str:
     text = (post.get("title", "") + " " + post.get("body", "")).lower()
     f = text.count("(f)") + text.count("(f,") + text.count(" her ") + text.count(" she ")
     m = text.count("(m)") + text.count("(m,") + text.count(" his ") + text.count(" he ")
@@ -50,15 +20,15 @@ def score_post(post: dict, config: dict = None) -> dict:
     reddit_score = post.get("score", 0)
     upvote_ratio = post.get("upvote_ratio", 0)
 
-    sub_name = post.get("subreddit", "")
     min_score = 200
     if config:
         for s in config.get("farm", {}).get("subreddits", []):
-            if s["name"].lower() == sub_name.lower():
+            if s["name"].lower() == post.get("subreddit", "").lower():
                 min_score = s.get("min_score", 200)
                 break
 
-    # ── Rule pre-filter (free) ────────────────────────────────────────────────
+    skip_kws = config.get("crawl", {}).get("skip_title_keywords", _DEFAULT_SKIP_KEYWORDS) if config else _DEFAULT_SKIP_KEYWORDS
+
     fail_reason = None
     if reddit_score < min_score:
         fail_reason = f"score {reddit_score} < {min_score}"
@@ -66,36 +36,16 @@ def score_post(post: dict, config: dict = None) -> dict:
         fail_reason = f"ratio {upvote_ratio:.2f} < 0.80"
     elif len(body) < 300:
         fail_reason = "body too short"
-    elif any(kw in title for kw in SKIP_KEYWORDS):
+    elif any(kw in title for kw in skip_kws):
         fail_reason = "skip keyword"
 
-    if fail_reason:
-        post["score"] = {"verdict": "fail", "overall": 4.0, "reason": fail_reason,
-                         "narrator_gender": _narrator_gender_fallback(post)}
-        print(f"  [scorer] FAIL (rules) — {post['title'][:60]}")
-        return post
-
-    # ── Claude micro-call (only for rule-passers) ─────────────────────────────
-    try:
-        client = _get_client()
-        r = client.messages.create(
-            model=MODEL, max_tokens=60, system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": USER_PROMPT.format(
-                title=post.get("title", ""), body=body[:800]
-            )}]
-        )
-        raw = r.content[0].text.strip()
-        s, e = raw.find('{'), raw.rfind('}') + 1
-        result = json.loads(raw[s:e])
-        verdict = result.get("verdict", "fail")
-        narrator_gender = result.get("narrator_gender", "female")
-    except Exception as ex:
-        print(f"  [scorer] Claude error: {ex} — letting through")
-        verdict = "pass"
-        narrator_gender = _narrator_gender_fallback(post)
-
-    post["score"] = {"verdict": verdict, "overall": 8.0 if verdict == "pass" else 4.0,
-                     "narrator_gender": narrator_gender}
+    verdict = "fail" if fail_reason else "pass"
+    post["score"] = {
+        "verdict": verdict,
+        "overall": 8.0 if verdict == "pass" else 4.0,
+        "narrator_gender": _narrator_gender(post),
+        **({"reason": fail_reason} if fail_reason else {})
+    }
     print(f"  [scorer] {verdict.upper()} — {post['title'][:60]}")
     return post
 
