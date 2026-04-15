@@ -121,18 +121,12 @@ def run_forge(draft: dict, config: dict) -> str:
 
     description = (
         f"{card_title}\n\n"
-        "#aita #aitah #amitheassholeforreal #amitheasshole #redditstories #reddit #redditdrama "
-        "#storytime #storytelling #truestory #firstperson #confession #drama #relationships "
-        "#relationship #relationshipadvice #family #familydrama #toxic #revenge #pettythings "
-        "#fyp #foryou #foryoupage #viral #trending #shorts #shortsviral #youtubeshorts"
+        "#aita #aitah #redditstories #storytelling #youtubeshorts "
+        "#redditdrama #storytime #drama #relationships #shorts"
     )
     tags = [
-        "aita", "aitah", "amitheasshole", "amitheassholeforreal",
-        "reddit", "redditstories", "redditdrama", "askreddit",
-        "storytime", "storytelling", "truestory", "confession", "firstperson",
-        "drama", "relationships", "relationship", "relationshipadvice",
-        "family", "familydrama", "toxic", "revenge",
-        "fyp", "foryou", "viral", "trending", "shorts", "youtubeshorts"
+        "aita", "aitah", "redditstories", "storytelling", "youtubeshorts",
+        "redditdrama", "storytime", "drama", "relationships", "shorts"
     ]
     youtube_uploader.upload(video_path, title=f"{card_title} #Shorts", description=description, tags=tags)
 

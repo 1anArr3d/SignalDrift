@@ -1,14 +1,14 @@
-# SignalDrift cron schedule
+# SignalDrift cron schedule (server is UTC, times target CST audience)
 # Install with: crontab scheduler/crontab.txt
 
-# Crawl at 6am daily — refills the queue before first forge
-0 6 * * * /opt/signaldrift/scheduler/run_crawl.sh
+# Crawl at 6am CST (12pm UTC) — refills the queue before afternoon forges
+0 12 * * * /opt/signaldrift/scheduler/run_crawl.sh
 
-# Shorts: 7am, 11am, 2pm, 6pm
-0 7  * * * /opt/signaldrift/scheduler/run_pipeline.sh
-0 11 * * * /opt/signaldrift/scheduler/run_pipeline.sh
-0 14 * * * /opt/signaldrift/scheduler/run_pipeline.sh
+# Shorts: 7am, 12pm, 5pm, 8pm CST = 1pm, 6pm, 11pm, 2am UTC
+0 13 * * * /opt/signaldrift/scheduler/run_pipeline.sh
 0 18 * * * /opt/signaldrift/scheduler/run_pipeline.sh
+0 23 * * * /opt/signaldrift/scheduler/run_pipeline.sh
+0 2  * * * /opt/signaldrift/scheduler/run_pipeline.sh
 
 # Long-form compilation slot (4pm) — pipeline TBD
 # 0 16 * * * /opt/signaldrift/scheduler/run_compilation.sh
