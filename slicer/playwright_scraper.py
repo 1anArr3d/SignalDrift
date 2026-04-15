@@ -10,8 +10,9 @@ Usage:
 import sys
 from pathlib import Path
 
-SLICER_DIR = Path(__file__).resolve().parent
-QUEUE_FILE  = SLICER_DIR / "video_queue.txt"
+SLICER_DIR   = Path(__file__).resolve().parent
+QUEUE_FILE   = SLICER_DIR / "video_queue.txt"
+FETCHED_FILE = SLICER_DIR / "fetched_urls.txt"
 
 DEFAULT_QUERIES = [
     "satisfying workers compilation",
@@ -39,6 +40,17 @@ def _save_queue(urls: list):
     QUEUE_FILE.write_text("\n".join(urls))
 
 
+def _load_fetched() -> set:
+    if FETCHED_FILE.exists():
+        return set(FETCHED_FILE.read_text().strip().splitlines())
+    return set()
+
+
+def _mark_fetched(url: str):
+    with FETCHED_FILE.open("a") as f:
+        f.write(url + "\n")
+
+
 def scrape_urls(queries: list = None, count_per_query: int = 15) -> int:
     """
     Scrape YouTube search results and append new video URLs to video_queue.txt.
@@ -49,7 +61,7 @@ def scrape_urls(queries: list = None, count_per_query: int = 15) -> int:
     if queries is None:
         queries = DEFAULT_QUERIES
 
-    existing = set(_load_queue())
+    existing = set(_load_queue()) | _load_fetched()
     new_urls = []
 
     with sync_playwright() as p:
@@ -118,6 +130,7 @@ def pop_url() -> str | None:
         return None
     url = urls.pop(0)
     _save_queue(urls)
+    _mark_fetched(url)
     return url
 
 

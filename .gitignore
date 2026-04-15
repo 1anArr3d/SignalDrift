@@ -25,6 +25,7 @@ slicer/yt_session.json
 slicer/yt_cookies.txt
 slicer/video_queue.txt
 slicer/fetched_ids.json
+slicer/fetched_urls.txt
 
 # --- Credentials ---
 token.json
