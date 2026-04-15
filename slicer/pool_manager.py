@@ -49,14 +49,29 @@ def _send_low_pool_alert(count: int, threshold: int):
         print(f"[pool] Alert email failed: {e}")
 
 
+def _replenish(config: dict):
+    """Download next video from queue, slice it into the pool."""
+    from slicer.fetch import fetch_next
+    from slicer.silcer_mvp import run as slice_run
+
+    print("[pool] Replenishing from URL queue...")
+    success = fetch_next(config)
+    if success:
+        slice_run(config)
+        print(f"[pool] Replenished. Pool now has {_clip_count()} clips.")
+    else:
+        print("[pool] Replenish failed — queue empty or no session. Sending alert...")
+        _send_low_pool_alert(_clip_count(), config.get("slicer", {}).get("replenish_threshold", 10) if config else 10)
+
+
 def get_random_clip(config: dict = None) -> str:
-    """Return a random clip. Sends email alert if pool is below threshold."""
+    """Return a random clip. Auto-replenishes from URL queue if pool is below threshold."""
     if config:
         threshold = config.get("slicer", {}).get("replenish_threshold", 10)
         count = _clip_count()
         if count < threshold:
-            print(f"[pool] {count} clips remaining (threshold: {threshold}) — sending alert...")
-            _send_low_pool_alert(count, threshold)
+            print(f"[pool] {count} clips remaining (threshold: {threshold}) — replenishing...")
+            _replenish(config)
 
     clips = glob.glob(os.path.join(POOL_FOLDER, "**", "chunk_*.mp4"), recursive=True)
     if not clips:

@@ -21,6 +21,10 @@ tester.py
 slicer/input/*.mp4
 slicer/background_pool/
 slicer/pool_state.json
+slicer/yt_session.json
+slicer/yt_cookies.txt
+slicer/video_queue.txt
+slicer/fetched_ids.json
 
 # --- Credentials ---
 token.json
