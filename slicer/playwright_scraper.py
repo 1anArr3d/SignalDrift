@@ -1,32 +1,31 @@
 """
 playwright_scraper.py
 
-Scrapes YouTube video URLs using a saved browser session.
-On first run, opens a visible browser for manual login.
-Subsequent runs are headless.
+Scrapes YouTube video URLs into video_queue.txt (no login required).
+yt-dlp uses cookies exported from your real Chrome browser for downloads.
 
 Usage:
     python slicer/playwright_scraper.py          # scrape URLs into queue
-    python slicer/playwright_scraper.py --login  # force re-login
 """
-import json
 import sys
 from pathlib import Path
 
 SLICER_DIR = Path(__file__).resolve().parent
-SESSION_FILE = SLICER_DIR / "yt_session.json"
-COOKIES_FILE = SLICER_DIR / "yt_cookies.txt"
-QUEUE_FILE   = SLICER_DIR / "video_queue.txt"
+QUEUE_FILE  = SLICER_DIR / "video_queue.txt"
 
 DEFAULT_QUERIES = [
-    "satisfying workers compilation 1 hour",
-    "oddly satisfying compilation 1 hour",
-    "relaxing satisfying video compilation 1 hour",
-    "satisfying skills compilation 1 hour",
+    "satisfying workers compilation",
+    "oddly satisfying compilation",
+    "relaxing satisfying video compilation",
+    "satisfying skills compilation",
+    "satisfying construction compilation",
+    "satisfying cleaning compilation",
+    "satisfying food compilation",
+    "oddly satisfying videos",
 ]
 
-# YouTube search filter for videos over 20 minutes
-LONG_VIDEO_FILTER = "EgIYAQ%3D%3D"
+# YouTube search filter: videos over 4 minutes
+LONG_VIDEO_FILTER = "EgIQAQ%3D%3D"
 
 
 def _load_queue() -> list:
@@ -40,26 +39,9 @@ def _save_queue(urls: list):
     QUEUE_FILE.write_text("\n".join(urls))
 
 
-def _export_cookies(session_path: Path, output_path: Path):
-    """Convert Playwright storage_state cookies to Netscape format for yt-dlp."""
-    state = json.loads(session_path.read_text())
-    lines = ["# Netscape HTTP Cookie File"]
-    for cookie in state.get("cookies", []):
-        domain = cookie["domain"]
-        flag = "TRUE" if domain.startswith(".") else "FALSE"
-        path = cookie.get("path", "/")
-        secure = "TRUE" if cookie.get("secure", False) else "FALSE"
-        expires = int(cookie.get("expires", 0))
-        name = cookie["name"]
-        value = cookie["value"]
-        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
-    output_path.write_text("\n".join(lines))
-    print(f"[scraper] Cookies exported to {output_path}")
-
-
-def scrape_urls(queries: list = None, count_per_query: int = 5, force_login: bool = False) -> int:
+def scrape_urls(queries: list = None, count_per_query: int = 15) -> int:
     """
-    Scrape YouTube video URLs and append to video_queue.txt.
+    Scrape YouTube search results and append new video URLs to video_queue.txt.
     Returns number of new URLs added.
     """
     from playwright.sync_api import sync_playwright
@@ -67,46 +49,50 @@ def scrape_urls(queries: list = None, count_per_query: int = 5, force_login: boo
     if queries is None:
         queries = DEFAULT_QUERIES
 
-    headless = SESSION_FILE.exists() and not force_login
-    if not headless:
-        print("[scraper] No saved session — opening browser for manual login.")
-
     existing = set(_load_queue())
     new_urls = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
-
-        if SESSION_FILE.exists() and not force_login:
-            context = browser.new_context(storage_state=str(SESSION_FILE))
-        else:
-            context = browser.new_context()
-
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        )
+        context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
         page = context.new_page()
-
-        if not headless:
-            page.goto("https://www.youtube.com")
-            print("[scraper] Log into YouTube in the browser window.")
-            input("[scraper] Press Enter here after you're logged in...")
-            context.storage_state(path=str(SESSION_FILE))
-            _export_cookies(SESSION_FILE, COOKIES_FILE)
-            print("[scraper] Session saved.")
 
         for query in queries:
             print(f"[scraper] Searching: {query}")
-            url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}&sp={LONG_VIDEO_FILTER}"
+            search_url = (
+                f"https://www.youtube.com/results"
+                f"?search_query={query.replace(' ', '+')}"
+                f"&sp={LONG_VIDEO_FILTER}"
+            )
             try:
-                page.goto(url, timeout=15000)
-                page.wait_for_selector("ytd-video-renderer", timeout=10000)
+                page.goto(search_url, timeout=20000)
+                page.wait_for_selector("ytd-video-renderer", timeout=15000)
+                # Scroll to trigger lazy-loading of more results
+                page.evaluate("window.scrollBy(0, 1500)")
+                page.wait_for_timeout(2000)
             except Exception as e:
-                print(f"[scraper] Failed to load search results for '{query}': {e}")
+                print(f"[scraper] Failed to load results for '{query}': {e}")
                 continue
 
-            videos = page.query_selector_all("ytd-video-renderer a#video-title")
+            hrefs = page.eval_on_selector_all(
+                "a[href*='/watch?v=']",
+                "els => els.map(e => e.getAttribute('href'))"
+            )
             added = 0
-            for v in videos:
-                href = v.get_attribute("href")
-                if href and "/watch?v=" in href:
+            for href in hrefs:
+                if "/watch?v=" in href:
                     full_url = "https://www.youtube.com" + href.split("&")[0]
                     if full_url not in existing:
                         new_urls.append(full_url)
@@ -140,5 +126,4 @@ def queue_size() -> int:
 
 
 if __name__ == "__main__":
-    force = "--login" in sys.argv
-    scrape_urls(force_login=force)
+    scrape_urls()

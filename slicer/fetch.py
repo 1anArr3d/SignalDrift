@@ -87,15 +87,12 @@ def fetch_next(config: dict = None) -> bool:
     If queue is empty, runs playwright scraper to refill it first.
     Returns True on success.
     """
-    from slicer.playwright_scraper import pop_url, scrape_urls, queue_size, SESSION_FILE
+    from slicer.playwright_scraper import pop_url, scrape_urls, queue_size
 
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     url = pop_url()
     if url is None:
-        if not SESSION_FILE.exists():
-            print("[fetch] No queue and no saved session — run: python slicer/playwright_scraper.py")
-            return False
         print("[fetch] Queue empty — running scraper to refill...")
         queries = config.get("slicer", {}).get("search_queries", None) if config else None
         scrape_urls(queries=queries)
