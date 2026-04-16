@@ -34,6 +34,11 @@ drive_token.json
 client_secret.json
 client_secret_*.json
 
+# --- PyInstaller ---
+build/
+dist/
+*.spec
+
 # --- Legacy Cleanup ---
 qdrant_storage/
 *.csv
